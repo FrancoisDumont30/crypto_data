@@ -7,7 +7,6 @@ x-airflow-common: &airflow-common
     PYTHONPATH: /opt/airflow/src
   volumes:
     - ./dags:/opt/airflow/dags
-    - ./dags:/opt/airflow/dags
     - ./src:/opt/airflow/src
   depends_on: &airflow-common-depends-on
     postgres:
