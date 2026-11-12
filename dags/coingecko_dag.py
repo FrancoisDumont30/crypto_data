@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from airflow.sdk import dag, task
-# test2 
+
+
 
 @dag(
     dag_id="crypto_collect_minute",
@@ -11,23 +12,21 @@ from airflow.sdk import dag, task
     default_args={"retries": 0, "retry_delay": timedelta(seconds=10)},
 )
 
-
 def coingecko_pipe():
     @task
     def collect():
-        from coingecko import fetch_coingecko_data
-
+        from collector.coingecko import fetch_coingecko_data
         raws = fetch_coingecko_data()
         return raws
 
     @task
     def transform(raws):
-        from coingecko import process_coingecko_data
+        from transformations.coingecko_transform import process_coingecko_data
         return process_coingecko_data(raws)
 
     @task
     def ingest(datalist) :
-        from coingecko import insert_coingecko_data
+        from load.coingecko_load import insert_coingecko_data
         return insert_coingecko_data(datalist)
 
     raw_data = collect()

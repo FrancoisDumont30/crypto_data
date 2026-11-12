@@ -17,8 +17,7 @@
 - **Source principale** : [CoinGecko API](https://www.coingecko.com/en/api) (gratuit)
 - **Historique** : [Binance API](https://binance-docs.github.io/apidocs/) (gratuit)
 - **Volume** : 50 cryptos, données à la minute
-- **Features** : Prix, volume, market cap, social metrics
-
+- **Features** : Prix, volume, market cap
 ---
 
 ## 🎯 Critères de Réussite
