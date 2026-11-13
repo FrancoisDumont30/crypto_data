@@ -9,3 +9,20 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
     collected_at TIMESTAMPTZ NOT NULL,
     PRIMARY KEY (coin_id, collected_at)
     );
+
+CREATE TABLE IF NOT EXISTS klines (
+    symbol TEXT NOT NULL,
+    "interval" TEXT, 
+    open_time TIMESTAMPTZ,
+    "open" NUMERIC,
+    high NUMERIC,
+    low NUMERIC, 
+    "close" NUMERIC,
+    volume NUMERIC,
+    close_time TIMESTAMPTZ,
+    quote_volume NUMERIC,
+    trades INTEGER,
+    taker_buy_base_volume NUMERIC,
+    taker_buy_quote_volume NUMERIC,
+    PRIMARY KEY (symbol, interval, open_time)
+    );
