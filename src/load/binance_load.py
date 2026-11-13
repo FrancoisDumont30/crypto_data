@@ -3,6 +3,10 @@ import logging
 from pathlib import Path
 import os
 import pandas as pd
+from datetime import datetime, timezone, timedelta
+
+from collector.binance import get_klines
+from transformations.binance_transform import transform
 
 # Dossier de base DANS le conteneur Airflow (volume ./data monté sur /opt/airflow/data)
 DEFAULT_BASE_DIR = Path(os.getenv("DATA_DIR", "/opt/airflow/data")) / "parquet"
@@ -58,28 +62,52 @@ def parquet_storage(df: pd.DataFrame, base_dir: Path | str = DEFAULT_BASE_DIR) -
     return written
 
 
-# if __name__ == "__main__":
-#     # Test sans réseau, dans un dossier temporaire (rien n'est écrit dans data/)
-#     import tempfile
+def get_last_open_time(symbol, interval, base_dir: Path | str = DEFAULT_BASE_DIR) :
+    """
+    Renvoie le dernier 'open time' d'une bougie.
+    """
 
-#     from transformations.binance_transform import transform
+    base_dir = Path(base_dir)
+    folder = base_dir / "klines" / f"interval={interval}" / f"symbol={symbol}"
 
-#     logging.basicConfig(level=logging.INFO)
+    files = sorted(folder.glob("*.parquet"))  
+    if not files:                            
+        return None
 
-#     raw = [
-#         [1794471480000 + i * 60000, "1.0", "2.0", "0.5", "1.5", "10.0",
-#          1794471539999 + i * 60000, "15.0", 5, "4.0", "6.0", "0"]
-#         for i in range(3)
-#     ]
-#     df = transform(raw, "BTCUSDT", "1m")
+    col = pd.read_parquet(files[-1], columns=["open_time"])
+    return col["open_time"].max()
 
-#     with tempfile.TemporaryDirectory() as tmp:
-#         files = write_klines_parquet(df, tmp)
-#         print("Fichiers :", [str(f) for f in files])
 
-#         # Deuxième écriture des mêmes données : pas de doublons attendus
-#         write_klines_parquet(df, tmp)
+def ingest_pair(symbol, interval="1m", backfill_days=30) :
+    """ Enregistre les 30 derniers jours de donnée sur une bougie donnée
+    """
+    last_open_time = get_last_open_time(symbol, interval)
 
-#         relu = pd.read_parquet(files[0])
-#         print(f"Lignes après 2 écritures : {len(relu)} (attendu : 3)")
-#         print(relu.dtypes)
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+
+    if last_open_time :
+        start = last_open_time + timedelta(minutes=1)
+    else :
+        start = now - timedelta(days=backfill_days)
+
+
+    info = {"symbol":f'{symbol}',
+            "interval":f'{interval}',
+            "start":f'{start}',
+            "end":f'{now}',
+            "rows": 0}
+
+    if start >= now:
+        logging.info("%s : rien à récupérer", symbol)
+        return info
+
+    else :
+        resp = get_klines(symbol, interval, start, now)
+        # transform
+        df = transform(resp, symbol, interval)
+        # load
+        parquet_storage(df)
+
+        info["rows"] = len(df)
+        logging.info(info)
+        return info
