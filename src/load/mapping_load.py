@@ -61,13 +61,3 @@ def get_all_symbols() -> list :
 
 
     return ma_liste
-
-
-# docker compose exec airflow-worker python -c "
-# import logging
-# logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-# from load.mapping_load import get_all_symbols
-# symbols = get_all_symbols()
-# print(type(symbols))
-# print(symbols)
-# "

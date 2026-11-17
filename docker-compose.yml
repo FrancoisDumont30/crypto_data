@@ -317,5 +317,18 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  api :
+    build: ./api
+    container_name: fastapi-application
+    environment:
+      PORT: 8000
+      CRYPTO_DB_URL: postgresql://airflow:airflow@postgres:5432/crypto
+    ports:
+      - '8000:8000'
+    restart: always
+    depends_on :
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:

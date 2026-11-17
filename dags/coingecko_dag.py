@@ -9,7 +9,7 @@ from airflow.sdk import dag, task
     start_date=datetime(2026, 11, 1),
     catchup=False,
     max_active_runs=1,
-    default_args={"retries": 0, "retry_delay": timedelta(seconds=10)},
+    default_args={"retries": 2, "retry_delay": timedelta(seconds=15)},
 )
 
 def coingecko_pipe():
