@@ -17,18 +17,18 @@ from monitoring.alerts import notify_failure
 def coingecko_pipe():
     @task
     def collect():
-        from collector.coingecko import fetch_coingecko_data
+        from extract.coingecko import fetch_coingecko_data
         raws = fetch_coingecko_data()
         return raws
 
     @task
     def transform(raws):
-        from transformations.coingecko_transform import process_coingecko_data
+        from transform.models import process_coingecko_data
         return process_coingecko_data(raws)
 
     @task
     def ingest(datalist) :
-        from load.coingecko_load import insert_coingecko_data
+        from load.postgres_db import insert_coingecko_data
         return insert_coingecko_data(datalist)
 
     raw_data = collect()

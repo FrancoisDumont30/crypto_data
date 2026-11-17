@@ -15,10 +15,10 @@ from monitoring.alerts import notify_failure
 def binance_pipe():
     @task
     def list_pairs() -> list:
-        from load.coingecko_load import get_unique_crypto
-        from collector.binance_symbol import get_binance_symbols
-        from collector.map_to_binance import get_mapper
-        from load.mapping_load import upsert_mapping, get_all_symbols
+
+        from load.postgres_db import get_unique_crypto, upsert_mapping, get_all_symbols
+        from extract.binance import get_binance_symbols
+        from transform.mappers import get_mapper
 
         # Récupérer les symbols et créer un mapper
         gencko_crypto = get_unique_crypto() # -> list
@@ -42,8 +42,7 @@ def binance_pipe():
     @task(max_active_tis_per_dag = 1)
     def ingest(symbol:str) :
 
-        from load.binance_load import ingest_pair
-        from load.klines_pg import load_recent_klines_pipe
+        from pipelines.ingestion import ingest_pair, load_recent_klines_pipe
 
         pair = ingest_pair(symbol, interval="1m", backfill_days=7) 
         recent_klines = load_recent_klines_pipe(symbol, interval="1m", days=7) 

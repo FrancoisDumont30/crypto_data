@@ -3,19 +3,32 @@ import logging
 from pathlib import Path
 import os
 import pandas as pd
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 
-from collector.binance import get_klines
-from transformations.binance_transform import transform
+logger = logging.getLogger(__name__)
+
+OUTPUT_COLUMNS = [
+    "symbol",
+    "interval",
+    "open_time",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "close_time",
+    "quote_volume",
+    "trades",
+    "taker_buy_base_volume",
+    "taker_buy_quote_volume",
+]
+
 
 # Dossier de base DANS le conteneur Airflow (volume ./data monté sur /opt/airflow/data)
 DEFAULT_BASE_DIR = Path(os.getenv("DATA_DIR", "/opt/airflow/data")) / "parquet"
 
 # Clé unique d'une bougie
 KEY_COLUMNS = ["symbol", "interval", "open_time"]
-
-logger = logging.getLogger(__name__)
-
 
 def parquet_storage(df: pd.DataFrame, base_dir: Path | str = DEFAULT_BASE_DIR) -> list[Path]:
     """Écrit un DataFrame de bougies en fichiers Parquet, un par (symbole, intervalle, mois).
@@ -78,37 +91,62 @@ def get_last_open_time(symbol, interval, base_dir: Path | str = DEFAULT_BASE_DIR
     return col["open_time"].max()
 
 
-def ingest_pair(symbol, interval="1m", backfill_days=30) :
-    """ 
-    Enregistre les 30 derniers jours de donnée sur une bougie donnée
+def find_limit_date(days : int = 7) -> date :
     """
-    last_open_time = get_last_open_time(symbol, interval)
+    Calcul la date limite (borne inférieure) """
+    today_utc = datetime.now(timezone.utc).date()
 
-    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-
-    if last_open_time :
-        start = last_open_time + timedelta(minutes=1)
-    else :
-        start = now - timedelta(days=backfill_days)
+    return today_utc - timedelta(days=days)
 
 
-    info = {"symbol":f'{symbol}',
-            "interval":f'{interval}',
-            "start":f'{start}',
-            "end":f'{now}',
-            "rows": 0}
+def find_parquet_file(symbol :str, limit_date : date, interval : str ="1m") -> list :
+    """
+    Recherche tous les fichiers parquets entre maintenant et 'maintenant - days'
+    Renvoie une liste de file_path.
+    """
+    
+    parquet_files = []
 
-    if start >= now:
-        logging.info("%s : rien à récupérer", symbol)
-        return info
+    base_dir = Path(DEFAULT_BASE_DIR)
+    folder = base_dir / "klines" / f"interval={interval}" / f"symbol={symbol}"
 
-    else :
-        resp = get_klines(symbol, interval, start, now)
-        # transform
-        df = transform(resp, symbol, interval)
-        # load
-        parquet_storage(df)
+    # # today = datetime.today().replace(tzinfo=timezone.utc)
+    first_month = limit_date.replace(day=1)
 
-        info["rows"] = len(df)
-        logging.info(info)
-        return info
+
+    for file_path in folder.glob("*.parquet"):
+            date_str = file_path.stem  # Format "YYYY-MM"
+
+            try:
+                file_date = datetime.strptime(date_str, "%Y-%m").replace(tzinfo=timezone.utc).replace(day=1)
+                   
+                # Conserve le fichier si son mois >= first_month
+                if file_date.date()  >= first_month:
+                    parquet_files.append(file_path)
+
+            except ValueError:
+                continue
+
+    logger.info(f'{len(parquet_files)} parquet files found')
+    return parquet_files
+
+
+def get_data(parquet_files) -> pd.DataFrame :
+    """
+    Pour chaque file_path de la liste, ouvre le dataframe et trie les lignes pour que toutes les dates soient >= limit_date
+    """
+    df_list = []
+
+    for file_path in parquet_files:
+        df_temp = pd.read_parquet(file_path, columns=OUTPUT_COLUMNS)
+        df_list.append(df_temp)
+
+    if df_list:
+        df = pd.concat(df_list, ignore_index=True)
+
+    else:
+        df = pd.DataFrame(columns=OUTPUT_COLUMNS)
+
+    logger.info(f'{len(df)} rows read')
+
+    return df
