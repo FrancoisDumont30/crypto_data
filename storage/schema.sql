@@ -26,3 +26,11 @@ CREATE TABLE IF NOT EXISTS klines (
     taker_buy_quote_volume NUMERIC,
     PRIMARY KEY (symbol, interval, open_time)
     );
+
+
+CREATE TABLE IF NOT EXISTS crypto_mapping (
+    coin_id TEXT PRIMARY KEY,
+    binance_symbol TEXT NOT NULL, 
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    
+    );
