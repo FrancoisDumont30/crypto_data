@@ -100,12 +100,18 @@ def insert_klines_data(df) -> int:
     if df.empty:
         return 0
 
-    tuples = [tuple(x) for x in df.to_numpy()]
+    # tuples = [tuple(x) for x in df.to_numpy()]
+    tuples = list(df[OUTPUT_COLUMNS].itertuples(index=False, name=None))
+
+    columns_str = ", ".join(OUTPUT_COLUMNS)
+
     query = f"""
-            INSERT INTO klines ({', '.join(OUTPUT_COLUMNS)}) VALUES %s
+            INSERT INTO klines ({columns_str}) 
+            VALUES %s
             ON CONFLICT (symbol, interval, open_time) DO NOTHING
             RETURNING 1;
             """
+    
     crypto_db_url = os.environ["CRYPTO_DB_URL"]
 
     with closing(psycopg2.connect(crypto_db_url)) as conn:
@@ -179,42 +185,3 @@ def load_recent_klines_pipe(symbol :str, days : int = 7, interval : str ="1m", )
         "db_lignes_inserées": inserted_rows,
         "db_lignes_purgées": purged_rows
     }
-
-
-
-
-# docker compose exec airflow-worker python -c "
-# import logging
-# logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-
-# from load.klines_pg import find_limit_date, find_parquet_file, get_data, insert_klines_data
-# limit_date = find_limit_date(days=65)
-# print('limit_date', limit_date)
-# print('first_month', limit_date.replace(day=1))
-# parquet_files = find_parquet_file('DOGEUSDT', limit_date) 
-# print('parquet_files', parquet_files)
-# df = get_data(parquet_files)
-# print('len df', len(df))
-# print(df.head(5))
-# insertion = insert_klines_data(df)
-# print(insertion)
-# "
-
-
-# docker compose exec airflow-worker python -c "
-# from load.klines_pg import find_limit_date, purge_old_klines
-# limit_date = find_limit_date(days=3)
-# res = purge_old_klines('DOGEUSDT', limit_date) 
-# (print(res))
-# "
-
-
-
-# docker compose exec airflow-worker python -c "
-# import logging
-# from pprint import pprint
-# logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-# from load.klines_pg import load_recent_klines_pipe
-# res = load_recent_klines_pipe('BTCUSDT', days=7) 
-# pprint(res)
-# "
