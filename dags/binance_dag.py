@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from airflow.sdk import dag, task
 
+
 @dag(
     dag_id="binance_klines_daily",
     schedule="0 2 * * *",
@@ -16,14 +17,26 @@ def binance_pipe():
         from load.coingecko_load import get_unique_crypto
         from collector.binance_symbol import get_binance_symbols
         from collector.map_to_binance import get_mapper
+        from load.mapping_load import upsert_mapping, get_all_symbols
 
-        gencko_crypto = get_unique_crypto()
-        binance_symbols = get_binance_symbols()
-        mapper = get_mapper(gencko_crypto, binance_symbols)
+        # Récupérer les symbols et créer un mapper
+        gencko_crypto = get_unique_crypto() # -> list
+        binance_symbols = get_binance_symbols() # -> set
+        mapper = get_mapper(gencko_crypto, binance_symbols) # -> dict
 
-        res = list(mapper.values())
+        # Insérer le mapper dans la bdd
+        upsert_mapping(mapper)
 
-        return res
+        # Lire les symbols de la bdd
+        symbols = get_all_symbols()
+
+        if len(symbols) == 0 :
+            raise ValueError('Liste de symboles vide')
+
+
+        return symbols
+        
+
 
     @task(max_active_tis_per_dag = 1)
     def ingest(symbol:str) :
