@@ -1,4 +1,5 @@
-"""Utilitaires de stockage : écriture des bougies Binance en Parquet."""
+"""Module de gestion des Entrées/Sorties (I/O) pour les fichiers Parquet locaux."""
+
 import logging
 from pathlib import Path
 import os
@@ -31,17 +32,23 @@ DEFAULT_BASE_DIR = Path(os.getenv("DATA_DIR", "/opt/airflow/data")) / "parquet"
 KEY_COLUMNS = ["symbol", "interval", "open_time"]
 
 def write_klines_to_parquet(df: pd.DataFrame, base_dir: Path | str = DEFAULT_BASE_DIR) -> list[Path]:
-    """Écrit un DataFrame de bougies en fichiers Parquet, un par (symbole, intervalle, mois).
+    """Écrit un DataFrame de bougies sous forme de fichiers Parquet partitionnés.
 
-    Arborescence :
-        <base_dir>/klines/interval=1m/symbol=BTCUSDT/2026-11.parquet
+        Arborescence cible :
+        « <base_dir>/klines/interval=1m/symbol=BTCUSDT/2026-11.parquet »
 
-    Relançable sans risque : si le fichier du mois existe déjà, les nouvelles
-    lignes sont fusionnées avec l'existant, les doublons (même symbol, interval,
-    open_time) sont supprimés et la dernière version de la ligne est conservée.
+        Le processus est idempotent : si le fichier du mois existe déjà, les nouvelles
+        lignes sont fusionnées avec l'existant, les doublons (basés sur le symbole,
+        l'intervalle et l'`open_time`) sont supprimés et la dernière version est conservée.
 
-    Retourne la liste des fichiers écrits.
-    """
+        Args:
+            df: DataFrame pandas contenant les klines à persister.
+            base_dir: Répertoire racine de stockage.
+
+        Returns:
+            La liste des chemins de fichiers (`Path`) écrits ou mis à jour.
+        """
+    
     if df.empty:
         logger.info("DataFrame vide : rien à écrire")
         return []
@@ -76,8 +83,15 @@ def write_klines_to_parquet(df: pd.DataFrame, base_dir: Path | str = DEFAULT_BAS
 
 
 def get_last_open_time(symbol, interval, base_dir: Path | str = DEFAULT_BASE_DIR) :
-    """
-    Renvoie le dernier 'open time' d'une bougie.
+    """Récupère le dernier horodatage d'ouverture (`open_time`) enregistré pour un symbole.
+
+    Args:
+        symbol: Paire de trading (ex: "BTCUSDT").
+        interval: Intervalle des bougies.
+        base_dir: Répertoire racine de stockage Parquet.
+
+    Returns:
+        Le timestamp en millisecondes de la dernière bougie, ou None si aucun fichier n'existe.
     """
 
     base_dir = Path(base_dir)
@@ -92,17 +106,29 @@ def get_last_open_time(symbol, interval, base_dir: Path | str = DEFAULT_BASE_DIR
 
 
 def calculate_limit_date(days : int = 7) -> date :
+    """Calcule la date limite (borne inférieure) pour le filtrage temporel.
+
+    Args:
+        days: Nombre de jours en arrière à partir d'aujourd'hui.
+
+    Returns:
+        Un objet `date` représentant la borne inférieure calculée.
     """
-    Calcul la date limite (borne inférieure) """
     today_utc = datetime.now(timezone.utc).date()
 
     return today_utc - timedelta(days=days)
 
 
 def list_parquet_files(symbol :str, limit_date : date, interval : str ="1m") -> list :
-    """
-    Recherche tous les fichiers parquets entre maintenant et 'maintenant - days'
-    Renvoie une liste de file_path.
+    """Recherche et liste les fichiers Parquet valides couvrant la période récente.
+
+    Args:
+        symbol: Symbole de la paire ciblée.
+        limit_date: Date limite inférieure de recherche.
+        interval: Intervalle des klines.
+
+    Returns:
+        Une liste de chemins (`Path`) pointant vers les fichiers correspondants.
     """
     
     parquet_files = []
@@ -132,9 +158,15 @@ def list_parquet_files(symbol :str, limit_date : date, interval : str ="1m") -> 
 
 
 def read_klines_from_parquet(parquet_files) -> pd.DataFrame :
-    """
-    Pour chaque file_path de la liste, ouvre le dataframe et trie les lignes pour que toutes les dates soient >= limit_date
-    """
+    """Lit une liste de fichiers Parquet et filtre les lignes selon la date limite.
+
+        Args:
+            parquet_files: Liste des chemins de fichiers Parquet à charger.
+
+        Returns:
+            Un DataFrame pandas consolidé et trié.
+        """
+    
     df_list = []
 
     for file_path in parquet_files:

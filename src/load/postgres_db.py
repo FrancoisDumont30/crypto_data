@@ -1,3 +1,6 @@
+"""Module d'interaction avec la base de données PostgreSQL (insertions et requêtes)."""
+
+
 import psycopg2
 from psycopg2.extras import execute_values
 import os
@@ -32,8 +35,13 @@ OUTPUT_COLUMNS = [
 
 
 def insert_coingecko_data(data_list : list):
-    """
-    Enregistre les données dans la base PostgreSQL market_snapshots
+    """Enregistre les snapshots de marché CoinGecko dans la table PostgreSQL `market_snapshots`.
+
+    Args:
+        data_list: Liste des dictionnaires de données nettoyées.
+
+    Returns:
+        Le nombre de lignes insérées avec succès.
     """
     
     with psycopg2.connect(CRYPTO_DB_URL) as conn:
@@ -54,10 +62,16 @@ def insert_coingecko_data(data_list : list):
 
 
 def get_unique_crypto(since_hours: int | None = 24) :
+    """Récupère les couples distincts `(coin_id, coin_symbol)` collectés récemment.
+
+    Args:
+        since_hours: Fenêtre temporelle en heures. Si None, interroge toute la table.
+
+    Returns:
+        Une liste de tuples représentant les cryptos uniques.
     """
-    Renvoie les (coin_id, coin_symbol) distincts collectés sur les `since_hours` dernières heures.
-    since_hours=None : pas de filtre de temps (toute la table).
-    """
+
+
     query = "SELECT DISTINCT coin_id, coin_symbol FROM market_snapshots"
     params = ()
     if since_hours is not None:
@@ -76,10 +90,15 @@ def get_unique_crypto(since_hours: int | None = 24) :
         logger.warning("Couldn't find any unique crypto")
 
 def insert_klines_data(df) -> int:
+    """Insère un lot de klines dans la table cible PostgreSQL `klines`.
+
+    Args:
+        df: DataFrame contenant les klines prêtes à être chargées.
+
+    Returns:
+        Le nombre total de lignes réellement insérées.
     """
-    Insère les klines dans la table klines.
-    Renvoie le nombre de lignes réellement insérées.
-    """
+
     if df.empty:
         return 0
 
@@ -107,10 +126,20 @@ def insert_klines_data(df) -> int:
 
 
 def purge_old_klines(symbol: str, limit_date, interval: str = "1m") -> int:
+    """Supprime de la base de données les klines obsolètes pour un symbole donné.
+
+    Cible les lignes dont l'`open_time` est strictement antérieur à `limit_date`.
+
+    Args:
+        symbol: Symbole de la paire.
+        limit_date: Date seuil de purge.
+        interval: Intervalle des bougies.
+
+    Returns:
+        Le nombre de lignes supprimées de la table.
     """
-    Supprime les lignes de ce symbole dont open_time est antérieur à limit_date.
-    Renvoie le nombre de lignes supprimées.
-    """
+
+
     query = """
         DELETE FROM klines
         WHERE symbol = %s
@@ -131,6 +160,17 @@ def purge_old_klines(symbol: str, limit_date, interval: str = "1m") -> int:
 
 
 def upsert_mapping(mapper: dict) -> int :
+
+    """Insère ou met à jour (Upsert) la table de correspondance des cryptos en base.
+
+    Args:
+        mapper: Dictionnaire de correspondance des symboles.
+
+    Returns:
+        Le nombre de lignes affectées par l'opération.
+    """
+
+
     if not mapper :
         return 0
 
@@ -155,8 +195,10 @@ def upsert_mapping(mapper: dict) -> int :
     return num
 
 def get_all_symbols() -> list :
-    """
-    Récupère la liste des symbols binance dans la table crypto_mapping
+    """Récupère la liste exhaustive des symboles Binance enregistrés dans `crypto_mapping`.
+
+    Returns:
+        Une liste de chaînes de caractères représentant les symboles.
     """
 
     query = """

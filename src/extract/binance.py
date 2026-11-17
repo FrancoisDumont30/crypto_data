@@ -1,9 +1,4 @@
-"""Collecteur Binance : récupération de l'historique de bougies (klines).
-
-Endpoint public (pas de clé API) : GET /api/v3/klines
-- 1000 bougies maximum par appel
-- startTime / endTime en millisecondes UTC
-"""
+"""Module de récupération des données brutes depuis l'API publique Binance."""
 
 import logging
 import time
@@ -28,18 +23,36 @@ logger = logging.getLogger(__name__)
 
 
 def _to_ms(dt: datetime) -> int:
-    """Convertit un datetime en millisecondes UTC (naïf = considéré UTC)."""
+    """Convertit un objet datetime en timestamp Unix en millisecondes UTC.
+
+    Note:
+        Un datetime naïf (sans timezone) est considéré par défaut comme étant en UTC.
+
+    Args:
+        dt: Objet datetime à convertir.
+
+    Returns:
+        Le timestamp correspondant en millisecondes (entier).
+    """
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return int(dt.timestamp() * 1000)
 
 
 def _fetch_page(session: requests.Session, params: dict) -> list:
-    """Appelle l'API pour une page, avec retries.
+    """Appelle l'API Binance pour récupérer une page de données avec mécanisme de réessai (retry).
 
-    - 429 / 418 (rate limit) : on attend le délai indiqué par Binance
-    - 5xx et erreurs réseau : nouvel essai avec attente croissante
-    - autre 4xx (ex. symbole invalide) : erreur immédiate, inutile de réessayer
+    Gestion des erreurs gérée :
+        - 429 / 418 (Rate Limit) : Attente basée sur le délai indiqué par l'API.
+        - 5xx et erreurs réseau : Nouvelles tentatives avec backoff exponentiel.
+        - Autres 4xx (ex: symbole invalide) : Échec immédiat sans réessai.
+
+    Args:
+        session: Session HTTP active pour mutualiser les connexions.
+        params: Dictionnaire des paramètres de la requête API.
+
+    Returns:
+        La liste brute retournée par l'API pour cette page.
     """
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -79,17 +92,19 @@ def get_klines(
     end: datetime,
     session: requests.Session | None = None,
 ) -> list[list]:
-    """Récupère toutes les bougies de `symbol` entre `start` (inclus) et `end` (exclu).
+    """Récupère l'historique complet des bougies (klines) pour un symbole donné.
 
-    Paramètres
-    ----------
-    symbol   : paire Binance, ex. "BTCUSDT"
-    interval : "1m", "1h", "1d"...
-    start    : datetime de début (UTC)
-    end      : datetime de fin (UTC), exclue
+    Couvre la période allant de `start` (inclus) à `end` (exclu).
 
-    Retourne la liste BRUTE des bougies (liste de listes de 12 éléments),
-    sans aucune transformation.
+    Args:
+        symbol: Paire de trading ciblée, ex. « BTCUSDT ».
+        interval: Intervalle temporel des bougies (« 1m », « 1h », « 1d », etc.).
+        start: Date et heure de début (UTC).
+        end: Date et heure de fin (UTC, exclue).
+        session: Session HTTP optionnelle.
+
+    Returns:
+        Une liste brute de listes (contenant 12 éléments chacune), sans transformation.
     """
     start_ms = _to_ms(start)
     end_ms = _to_ms(end) - 1  # endTime est inclusif chez Binance : on retire 1 ms
@@ -124,9 +139,16 @@ def get_klines(
     return all_klines
 
 def fetch_binance_symbols() -> set :
-    """
-    Récupère tous les symbols de l'API de binance avec
-    un filtre status = TRADING et monnaie = USDT 
+    """Récupère l'ensemble des symboles de trading actifs sur l'API Binance.
+
+    Filtre les paires pour ne conserver que celles dont le statut est « TRADING »
+    et dont la devise de cotation est « USDT ».
+
+    Returns:
+        Un ensemble (set) de chaînes de caractères représentant les symboles (ex: {"BTCUSDT", "ETHUSDT"}).
+
+    Raises:
+        requests.exceptions.HTTPError: Si l'appel API échoue.
     """
     resp = requests.get(EXCHANGE_URL, timeout=TIMEOUT)
     resp.raise_for_status()

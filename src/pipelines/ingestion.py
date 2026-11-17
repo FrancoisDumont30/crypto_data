@@ -1,3 +1,5 @@
+"""Module d'orchestration des flux ETL (Extraction, Transformation, Chargement)."""
+
 import logging
 
 import pandas as pd
@@ -28,8 +30,14 @@ OUTPUT_COLUMNS = [
 
 
 def ingest_binance_pair(symbol, interval="1m", backfill_days=30) :
-    """ 
-    Enregistre les 30 derniers jours de donnée sur une bougie donnée
+    """Exécute le pipeline d'ingestion historique pour une paire de trading donnée.
+
+    Récupère, transforme et enregistre les derniers jours de données.
+
+    Args:
+        symbol: Symbole de la paire (ex: "BTCUSDT").
+        interval: Intervalle temporel des bougies.
+        backfill_days: Nombre de jours d'historique à remonter.
     """
     last_open_time = get_last_open_time(symbol, interval)
 
@@ -64,8 +72,17 @@ def ingest_binance_pair(symbol, interval="1m", backfill_days=30) :
 
 
 def ingest_recent_klines(symbol :str, days : int = 7, interval : str ="1m", ) -> dict :
-    """
-    Lit dans le Parquet les bougies des derniers jours pour ce symbole
+    """Orchestre la mise à jour incrémentale des bougies récentes depuis les fichiers Parquet.
+
+    Lit les fichiers Parquet récents, synchronise la base de données et nettoie l'ancienneté.
+
+    Args:
+        symbol: Symbole de la paire ciblée.
+        days: Nombre de jours récents à traiter.
+        interval: Intervalle des bougies.
+
+    Returns:
+        Un dictionnaire de métriques récapitulatives du pipeline (lignes lues, insérées, purgées).
     """
 
     limit_date = calculate_limit_date(days=days)

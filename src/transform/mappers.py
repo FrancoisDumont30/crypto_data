@@ -1,9 +1,18 @@
+"""Module de correspondance et réconciliation des symboles inter-plateformes."""
+
+
 import logging
 logger = logging.getLogger(__name__)
 
 def build_crypto_mapping(gecko_symbols, binance_symbols):
-    """
-    Recherche des correspondances entre les appelation des monnaies gecko et biances 
+    """Recherche des correspondances sémantiques entre les identifiants CoinGecko et Binance.
+
+    Args:
+        gecko_symbols: Liste des actifs récupérés depuis CoinGecko.
+        binance_symbols: Ensemble des symboles valides référencés sur Binance.
+
+    Returns:
+        Un dictionnaire de correspondance mapant les identifiants entre les deux sources.
     """
     mapper = {}  # gecko_id : binance_symbol
 

@@ -1,3 +1,5 @@
+"""Module de nettoyage, typage et transformation des payloads bruts."""
+
 import pandas as pd
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
@@ -45,10 +47,19 @@ OUTPUT_COLUMNS = [
 ]
 
 
-
-
  
 def safe_string(val, max_length=None):
+
+    """Nettoie et sécurise une chaîne de caractères brute.
+
+        Args:
+            val: Valeur d'entrée brute.
+            max_length: Longueur maximale optionnelle pour tronquer la chaîne.
+
+        Returns:
+            La chaîne nettoyée, ou None si la valeur est vide.
+        """
+
     if val is None:
         return None
     text = str(val).strip()
@@ -57,7 +68,14 @@ def safe_string(val, max_length=None):
     return text
 
 def safe_datetime(val):
-    """Convertit une string ISO en datetime UTC, ou retourne None si vide."""
+    """Convertit une chaîne ISO en datetime UTC, ou retourne None si vide.
+
+    Args:
+        val: Chaîne de caractères au format ISO.
+
+    Returns:
+        Un objet datetime conscient (timezone UTC) ou None.
+    """
     if not val:
         return None
     if isinstance(val, str):
@@ -65,7 +83,14 @@ def safe_datetime(val):
     return val
 
 def safe_numeric(val):
-    """Convertit proprement en Decimal pour le type NUMERIC de PostgreSQL."""
+    """Convertit proprement une valeur en Decimal pour les types NUMERIC de PostgreSQL.
+
+    Args:
+        val: Valeur numérique brute (int, float, str).
+
+    Returns:
+        Un objet Decimal sécurisé ou None.
+    """
     if val is None:
         return None
     try:
@@ -76,7 +101,16 @@ def safe_numeric(val):
 
 
 def transform(raw :list[list], symbol:str, interval:str) :
+    """Transforme les listes de klines brutes Binance en dictionnaires structurés.
 
+    Args:
+        raw: Liste brute de bougies retournée par l'API.
+        symbol: Symbole de la paire concernée.
+        interval: Intervalle de temps des bougies.
+
+    Returns:
+        Une liste de dictionnaires prêts pour l'insertion ou le stockage.
+    """
     if not raw:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
       
@@ -113,6 +147,18 @@ COLUMN_MAPPINGS = {
         }
 
 def process_coingecko_data(raw_data):
+
+    """Traite et normalise les données brutes issues de CoinGecko.
+
+        Filtre les champs pertinents et ajoute un horodatage normalisé (`collected_at`).
+
+        Args:
+            raw_data: Liste brute des snapshots CoinGecko.
+
+        Returns:
+            Une liste de dictionnaires nettoyés et standardisés.
+        """
+
     FIELDS = ["id", "symbol", "name", "current_price", "market_cap", "total_volume", "last_updated"]
     collected_at = datetime.now(timezone.utc).replace(microsecond=0)
 
