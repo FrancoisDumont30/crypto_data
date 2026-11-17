@@ -79,7 +79,8 @@ def get_last_open_time(symbol, interval, base_dir: Path | str = DEFAULT_BASE_DIR
 
 
 def ingest_pair(symbol, interval="1m", backfill_days=30) :
-    """ Enregistre les 30 derniers jours de donnée sur une bougie donnée
+    """ 
+    Enregistre les 30 derniers jours de donnée sur une bougie donnée
     """
     last_open_time = get_last_open_time(symbol, interval)
 

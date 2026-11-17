@@ -29,9 +29,15 @@ def binance_pipe():
     def ingest(symbol:str) :
 
         from load.binance_load import ingest_pair
+        from load.klines_pg import load_recent_klines_pipe
 
-        ingest_pair(symbol, interval="1m", backfill_days=30) 
-        return f'{symbol} backfilled with success'
+        pair = ingest_pair(symbol, interval="1m", backfill_days=7) 
+        recent_klines = load_recent_klines_pipe(symbol, interval="1m", days=7) 
+
+        pair.update(recent_klines)
+
+        return pair
+
 
     mapper = list_pairs()
     ingest.expand(symbol=mapper)

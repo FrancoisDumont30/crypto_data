@@ -8,7 +8,12 @@ load_dotenv()
 
 CRYPTO_DB_URL = os.getenv('CRYPTO_DB_URL')
 
-def insert_coingecko_data(data_list):
+def insert_coingecko_data(data_list : list):
+    """
+    Enregistre les données dans la base PostgreSQL market_snapshots
+    """
+
+
     with psycopg2.connect(CRYPTO_DB_URL) as conn:
         with conn.cursor() as cur:
             execute_values(
@@ -26,9 +31,9 @@ def insert_coingecko_data(data_list):
             )
 
 
-def get_unique_crypto(since_hours: int | None = 24):
-    """Renvoie les (coin_id, coin_symbol) distincts collectés sur les `since_hours` dernières heures.
-
+def get_unique_crypto(since_hours: int | None = 24) :
+    """
+    Renvoie les (coin_id, coin_symbol) distincts collectés sur les `since_hours` dernières heures.
     since_hours=None : pas de filtre de temps (toute la table).
     """
     query = "SELECT DISTINCT coin_id, coin_symbol FROM market_snapshots"

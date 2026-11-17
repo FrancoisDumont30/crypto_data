@@ -10,7 +10,11 @@ TIMEOUT = 10               # secondes
 
 logger = logging.getLogger(__name__)
 
-def get_binance_symbols():
+def get_binance_symbols() -> set :
+    """
+    Récupère tous les symbols de l'API de binance avec
+    un filtre status = TRADING et monnaie = USDT 
+    """
     resp = requests.get(EXCHANGE_URL, timeout=TIMEOUT)
     resp.raise_for_status()
 
