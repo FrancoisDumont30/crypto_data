@@ -123,7 +123,7 @@ def get_klines(
 
     return all_klines
 
-def get_binance_symbols() -> set :
+def fetch_binance_symbols() -> set :
     """
     Récupère tous les symbols de l'API de binance avec
     un filtre status = TRADING et monnaie = USDT 

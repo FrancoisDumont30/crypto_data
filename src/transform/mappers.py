@@ -1,7 +1,7 @@
 import logging
 logger = logging.getLogger(__name__)
 
-def get_mapper(gecko_symbols, binance_symbols):
+def build_crypto_mapping(gecko_symbols, binance_symbols):
     """
     Recherche des correspondances entre les appelation des monnaies gecko et biances 
     """

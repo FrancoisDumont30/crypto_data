@@ -30,7 +30,7 @@ DEFAULT_BASE_DIR = Path(os.getenv("DATA_DIR", "/opt/airflow/data")) / "parquet"
 # Clé unique d'une bougie
 KEY_COLUMNS = ["symbol", "interval", "open_time"]
 
-def parquet_storage(df: pd.DataFrame, base_dir: Path | str = DEFAULT_BASE_DIR) -> list[Path]:
+def write_klines_to_parquet(df: pd.DataFrame, base_dir: Path | str = DEFAULT_BASE_DIR) -> list[Path]:
     """Écrit un DataFrame de bougies en fichiers Parquet, un par (symbole, intervalle, mois).
 
     Arborescence :
@@ -91,7 +91,7 @@ def get_last_open_time(symbol, interval, base_dir: Path | str = DEFAULT_BASE_DIR
     return col["open_time"].max()
 
 
-def find_limit_date(days : int = 7) -> date :
+def calculate_limit_date(days : int = 7) -> date :
     """
     Calcul la date limite (borne inférieure) """
     today_utc = datetime.now(timezone.utc).date()
@@ -99,7 +99,7 @@ def find_limit_date(days : int = 7) -> date :
     return today_utc - timedelta(days=days)
 
 
-def find_parquet_file(symbol :str, limit_date : date, interval : str ="1m") -> list :
+def list_parquet_files(symbol :str, limit_date : date, interval : str ="1m") -> list :
     """
     Recherche tous les fichiers parquets entre maintenant et 'maintenant - days'
     Renvoie une liste de file_path.
@@ -131,7 +131,7 @@ def find_parquet_file(symbol :str, limit_date : date, interval : str ="1m") -> l
     return parquet_files
 
 
-def get_data(parquet_files) -> pd.DataFrame :
+def read_klines_from_parquet(parquet_files) -> pd.DataFrame :
     """
     Pour chaque file_path de la liste, ouvre le dataframe et trie les lignes pour que toutes les dates soient >= limit_date
     """

@@ -3,7 +3,7 @@ import logging
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 
-from load.parquet_io import get_last_open_time, parquet_storage, find_limit_date, get_data, find_parquet_file
+from load.parquet_io import get_last_open_time, write_klines_to_parquet, calculate_limit_date, read_klines_from_parquet, list_parquet_files
 from load.postgres_db import insert_klines_data, purge_old_klines
 from extract.binance import get_klines
 from transform.models import transform
@@ -27,7 +27,7 @@ OUTPUT_COLUMNS = [
 ]
 
 
-def ingest_pair(symbol, interval="1m", backfill_days=30) :
+def ingest_binance_pair(symbol, interval="1m", backfill_days=30) :
     """ 
     Enregistre les 30 derniers jours de donnée sur une bougie donnée
     """
@@ -56,26 +56,26 @@ def ingest_pair(symbol, interval="1m", backfill_days=30) :
         # transform
         df = transform(resp, symbol, interval)
         # load
-        parquet_storage(df)
+        write_klines_to_parquet(df)
 
         info["rows"] = len(df)
         logger.info(info)
         return info
 
 
-def load_recent_klines_pipe(symbol :str, days : int = 7, interval : str ="1m", ) -> dict :
+def ingest_recent_klines(symbol :str, days : int = 7, interval : str ="1m", ) -> dict :
     """
     Lit dans le Parquet les bougies des derniers jours pour ce symbole
     """
 
-    limit_date = find_limit_date(days=days)
+    limit_date = calculate_limit_date(days=days)
 
     # 1. Lecture des fichiers Parquet
-    parquet_files = find_parquet_file(symbol, limit_date, interval)
+    parquet_files = list_parquet_files(symbol, limit_date, interval)
 
     # Insérer les données des fichiers parquet dans un df
     if parquet_files :
-        df = get_data(parquet_files)
+        df = read_klines_from_parquet(parquet_files)
     else:
         df = pd.DataFrame(columns=OUTPUT_COLUMNS)
 

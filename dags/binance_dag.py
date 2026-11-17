@@ -17,13 +17,13 @@ def binance_pipe():
     def list_pairs() -> list:
 
         from load.postgres_db import get_unique_crypto, upsert_mapping, get_all_symbols
-        from extract.binance import get_binance_symbols
-        from transform.mappers import get_mapper
+        from extract.binance import fetch_binance_symbols
+        from transform.mappers import build_crypto_mapping
 
         # Récupérer les symbols et créer un mapper
         gencko_crypto = get_unique_crypto() # -> list
-        binance_symbols = get_binance_symbols() # -> set
-        mapper = get_mapper(gencko_crypto, binance_symbols) # -> dict
+        binance_symbols = fetch_binance_symbols() # -> set
+        mapper = build_crypto_mapping(gencko_crypto, binance_symbols) # -> dict
 
         # Insérer le mapper dans la bdd
         upsert_mapping(mapper)
@@ -42,10 +42,11 @@ def binance_pipe():
     @task(max_active_tis_per_dag = 1)
     def ingest(symbol:str) :
 
-        from pipelines.ingestion import ingest_pair, load_recent_klines_pipe
+        from pipelines.ingestion import ingest_binance_pair, ingest_recent_klines
+        
 
-        pair = ingest_pair(symbol, interval="1m", backfill_days=7) 
-        recent_klines = load_recent_klines_pipe(symbol, interval="1m", days=7) 
+        pair = ingest_binance_pair(symbol, interval="1m", backfill_days=7) 
+        recent_klines = ingest_recent_klines(symbol, interval="1m", days=7) 
 
         pair.update(recent_klines)
 
