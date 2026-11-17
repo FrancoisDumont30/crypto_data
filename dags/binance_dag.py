@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from airflow.sdk import dag, task
-
+from monitoring.alerts import notify_failure
 
 @dag(
     dag_id="binance_klines_daily",
@@ -8,8 +8,9 @@ from airflow.sdk import dag, task
     start_date=datetime(2026, 11, 1),
     catchup=False,
     max_active_runs=3,
-    default_args={"retries": 3, "retry_delay": timedelta(minutes=2)}
-    )
+    default_args={"retries": 3, 
+                  "retry_delay": timedelta(minutes=2),
+                  "on_failure_callback": notify_failure})
 
 def binance_pipe():
     @task

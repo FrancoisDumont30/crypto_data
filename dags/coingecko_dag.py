@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from airflow.sdk import dag, task
-
+from monitoring.alerts import notify_failure
 
 
 @dag(
@@ -9,7 +9,9 @@ from airflow.sdk import dag, task
     start_date=datetime(2026, 11, 1),
     catchup=False,
     max_active_runs=1,
-    default_args={"retries": 2, "retry_delay": timedelta(seconds=15)},
+    default_args={"retries": 2, 
+                  "retry_delay": timedelta(seconds=15),
+                  "on_failure_callback": notify_failure},
 )
 
 def coingecko_pipe():
