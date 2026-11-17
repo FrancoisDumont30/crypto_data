@@ -2,6 +2,11 @@ import psycopg2
 from psycopg2.extras import execute_values
 import os
 from contextlib import closing
+
+import logging
+logger = logging.getLogger(__name__)
+
+
 from dotenv import load_dotenv
 
 load_dotenv() 
@@ -12,8 +17,7 @@ def insert_coingecko_data(data_list : list):
     """
     Enregistre les données dans la base PostgreSQL market_snapshots
     """
-
-
+    
     with psycopg2.connect(CRYPTO_DB_URL) as conn:
         with conn.cursor() as cur:
             execute_values(
@@ -46,4 +50,9 @@ def get_unique_crypto(since_hours: int | None = 24) :
     with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
         with conn, conn.cursor() as cur:
             cur.execute(query, params)
-            return cur.fetchall()
+            res = cur.fetchall()
+
+            return res
+
+    if len(res) == 0 :
+        logger.warning("Couldn't find any unique crypto")
