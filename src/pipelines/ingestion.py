@@ -1,4 +1,4 @@
-"""Module d'orchestration des flux ETL (Extraction, Transformation, Chargement)."""
+"""ETL pipeline orchestration module (Extraction, Transformation, Loading)."""
 
 import logging
 
@@ -29,92 +29,91 @@ OUTPUT_COLUMNS = [
 ]
 
 
-def ingest_binance_pair(symbol, interval="1m", backfill_days=30) :
-    """Exécute le pipeline d'ingestion historique pour une paire de trading donnée.
+def ingest_binance_pair(symbol: str, interval: str = "1m", backfill_days: int = 30) -> dict:
+    """Execute the historical ingestion pipeline for a given trading pair.
 
-    Récupère, transforme et enregistre les derniers jours de données.
-
-    Args:
-        symbol: Symbole de la paire (ex: "BTCUSDT").
-        interval: Intervalle temporel des bougies.
-        backfill_days: Nombre de jours d'historique à remonter.
-    """
-    last_open_time = get_last_open_time(symbol, interval)
-
-    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
-
-    if last_open_time :
-        start = last_open_time + timedelta(minutes=1)
-    else :
-        start = now - timedelta(days=backfill_days)
-
-
-    info = {"symbol":f'{symbol}',
-            "interval":f'{interval}',
-            "start":f'{start}',
-            "end":f'{now}',
-            "rows": 0}
-
-    if start >= now:
-        logging.info("%s : rien à récupérer", symbol)
-        return info
-
-    else :
-        resp = get_klines(symbol, interval, start, now)
-        # transform
-        df = transform(resp, symbol, interval)
-        # load
-        write_klines_to_parquet(df)
-
-        info["rows"] = len(df)
-        logger.info(info)
-        return info
-
-
-def ingest_recent_klines(symbol :str, days : int = 7, interval : str ="1m", ) -> dict :
-    """Orchestre la mise à jour incrémentale des bougies récentes depuis les fichiers Parquet.
-
-    Lit les fichiers Parquet récents, synchronise la base de données et nettoie l'ancienneté.
+    Fetches, transforms, and saves the latest days of data.
 
     Args:
-        symbol: Symbole de la paire ciblée.
-        days: Nombre de jours récents à traiter.
-        interval: Intervalle des bougies.
+        symbol: Trading pair symbol (e.g., "BTCUSDT").
+        interval: Candlestick time interval.
+        backfill_days: Number of historical days to backfill.
 
     Returns:
-        Un dictionnaire de métriques récapitulatives du pipeline (lignes lues, insérées, purgées).
+        A dictionary summarizing the execution metrics.
     """
+    last_open_time = get_last_open_time(symbol, interval)
+    now = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
+    if last_open_time:
+        start = last_open_time + timedelta(minutes=1)
+    else:
+        start = now - timedelta(days=backfill_days)
+
+    info = {
+        "symbol": f"{symbol}",
+        "interval": f"{interval}",
+        "start": f"{start}",
+        "end": f"{now}",
+        "rows": 0,
+    }
+
+    if start >= now:
+        logger.info("%s: nothing to fetch", symbol)
+        return info
+
+    # Fetch, transform, and write data
+    resp = get_klines(symbol, interval, start, now)
+    df = transform(resp, symbol, interval)
+    write_klines_to_parquet(df)
+
+    info["rows"] = len(df)
+    logger.info(info)
+    return info
+
+
+def ingest_recent_klines(symbol: str, days: int = 7, interval: str = "1m") -> dict:
+    """Orchestrate incremental updates of recent candles from Parquet files.
+
+    Reads recent Parquet files, synchronizes the database, and purges obsolete data.
+
+    Args:
+        symbol: Target trading pair symbol.
+        days: Number of recent days to process.
+        interval: Candlestick interval.
+
+    Returns:
+        A dictionary of pipeline summary metrics.
+    """
     limit_date = calculate_limit_date(days=days)
 
-    # 1. Lecture des fichiers Parquet
+    # 1. Read Parquet files
     parquet_files = list_parquet_files(symbol, limit_date, interval)
 
-    # Insérer les données des fichiers parquet dans un df
-    if parquet_files :
+    # Load parquet file contents into a DataFrame
+    if parquet_files:
         df = read_klines_from_parquet(parquet_files)
     else:
         df = pd.DataFrame(columns=OUTPUT_COLUMNS)
 
-    # filtrage sur open_time (UTC)
-    # Conversion de limit_date en Timestamp UTC
+    # Filter by open_time (UTC)
     limit_timestamp = pd.Timestamp(limit_date, tz="UTC")
     df = df.loc[df["open_time"] >= limit_timestamp]
     row_left = len(df)
-    logger.info(f"{row_left} lignes conservées après filtre.")
+    logger.info("%s rows retained after filtering.", row_left)
 
-    # 2. Insertion en lot avec gestion des doublons
+    # 2. Batch insertion with duplicate handling
     inserted_rows = insert_klines_data(df)
     
-    # 3. Purge des données plus anciennes que la limite
+    # 3. Purge data older than the limit
     purged_rows = purge_old_klines(symbol, limit_timestamp)
-    logger.info(f"{purged_rows} ligne(s) purgée(s).")
+    logger.info("%s row(s) purged.", purged_rows)
 
-    # 4. Renvoi du résumé sous forme de dictionnaire
+    # 4. Return summary dictionary
     return {
         "symbol": symbol,
-        "date_limite" :limit_date.isoformat(),
-        "lignes_après_filtre" : row_left,
-        "db_lignes_inserées": inserted_rows,
-        "db_lignes_purgées": purged_rows
+        "limit_date": limit_date.isoformat(),
+        "filtered_rows": row_left,
+        "db_inserted_rows": inserted_rows,
+        "db_purged_rows": purged_rows,
     }

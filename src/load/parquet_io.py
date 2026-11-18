@@ -1,4 +1,4 @@
-"""Module de gestion des Entrées/Sorties (I/O) pour les fichiers Parquet locaux."""
+"""I/O management module for local Parquet files."""
 
 import logging
 from pathlib import Path
@@ -25,32 +25,32 @@ OUTPUT_COLUMNS = [
 ]
 
 
-# Dossier de base DANS le conteneur Airflow (volume ./data monté sur /opt/airflow/data)
+# Base directory INSIDE the Airflow container (volume ./data mounted to /opt/airflow/data)
 DEFAULT_BASE_DIR = Path(os.getenv("DATA_DIR", "/opt/airflow/data")) / "parquet"
 
-# Clé unique d'une bougie
+# Unique candle key
 KEY_COLUMNS = ["symbol", "interval", "open_time"]
 
+
 def write_klines_to_parquet(df: pd.DataFrame, base_dir: Path | str = DEFAULT_BASE_DIR) -> list[Path]:
-    """Écrit un DataFrame de bougies sous forme de fichiers Parquet partitionnés.
+    """Write a DataFrame of candles as partitioned Parquet files.
 
-        Arborescence cible :
-        « <base_dir>/klines/interval=1m/symbol=BTCUSDT/2026-11.parquet »
+    Target structure:
+    '<base_dir>/klines/interval=1m/symbol=BTCUSDT/2026-11.parquet'
 
-        Le processus est idempotent : si le fichier du mois existe déjà, les nouvelles
-        lignes sont fusionnées avec l'existant, les doublons (basés sur le symbole,
-        l'intervalle et l'`open_time`) sont supprimés et la dernière version est conservée.
+    The process is idempotent: if the monthly file already exists, new rows
+    are merged with existing ones, duplicates (based on symbol, interval,
+    and `open_time`) are removed, and the latest version is kept.
 
-        Args:
-            df: DataFrame pandas contenant les klines à persister.
-            base_dir: Répertoire racine de stockage.
+    Args:
+        df: Pandas DataFrame containing klines to persist.
+        base_dir: Root storage directory.
 
-        Returns:
-            La liste des chemins de fichiers (`Path`) écrits ou mis à jour.
-        """
-    
+    Returns:
+        The list of written or updated file paths (`Path`).
+    """
     if df.empty:
-        logger.info("DataFrame vide : rien à écrire")
+        logger.info("Empty DataFrame: nothing to write")
         return []
 
     base_dir = Path(base_dir)
@@ -70,30 +70,29 @@ def write_klines_to_parquet(df: pd.DataFrame, base_dir: Path | str = DEFAULT_BAS
 
         part = part.sort_values("open_time").reset_index(drop=True)
 
-        # Écriture dans un fichier temporaire puis remplacement :
-        # un plantage en cours d'écriture ne corrompt pas le fichier existant
+        # Write to a temporary file then replace:
+        # a crash during writing will not corrupt the existing file
         tmp_path = path.with_suffix(".parquet.tmp")
         part.to_parquet(tmp_path, index=False)
         tmp_path.replace(path)
 
-        logger.info("%s : %s lignes écrites", path, len(part))
+        logger.info("%s: %s rows written", path, len(part))
         written.append(path)
 
     return written
 
 
-def get_last_open_time(symbol, interval, base_dir: Path | str = DEFAULT_BASE_DIR) :
-    """Récupère le dernier horodatage d'ouverture (`open_time`) enregistré pour un symbole.
+def get_last_open_time(symbol: str, interval: str, base_dir: Path | str = DEFAULT_BASE_DIR):
+    """Retrieve the last recorded opening timestamp (`open_time`) for a symbol.
 
     Args:
-        symbol: Paire de trading (ex: "BTCUSDT").
-        interval: Intervalle des bougies.
-        base_dir: Répertoire racine de stockage Parquet.
+        symbol: Trading pair (e.g., "BTCUSDT").
+        interval: Candlestick interval.
+        base_dir: Root Parquet storage directory.
 
     Returns:
-        Le timestamp en millisecondes de la dernière bougie, ou None si aucun fichier n'existe.
+        The timestamp in milliseconds of the last candle, or None if no file exists.
     """
-
     base_dir = Path(base_dir)
     folder = base_dir / "klines" / f"interval={interval}" / f"symbol={symbol}"
 
@@ -105,68 +104,62 @@ def get_last_open_time(symbol, interval, base_dir: Path | str = DEFAULT_BASE_DIR
     return col["open_time"].max()
 
 
-def calculate_limit_date(days : int = 7) -> date :
-    """Calcule la date limite (borne inférieure) pour le filtrage temporel.
+def calculate_limit_date(days: int = 7) -> date:
+    """Calculate the limit date (lower bound) for time filtering.
 
     Args:
-        days: Nombre de jours en arrière à partir d'aujourd'hui.
+        days: Number of days back from today.
 
     Returns:
-        Un objet `date` représentant la borne inférieure calculée.
+        A `date` object representing the calculated lower bound.
     """
     today_utc = datetime.now(timezone.utc).date()
-
     return today_utc - timedelta(days=days)
 
 
-def list_parquet_files(symbol :str, limit_date : date, interval : str ="1m") -> list :
-    """Recherche et liste les fichiers Parquet valides couvrant la période récente.
+def list_parquet_files(symbol: str, limit_date: date, interval: str = "1m") -> list:
+    """Search and list valid Parquet files covering the recent period.
 
     Args:
-        symbol: Symbole de la paire ciblée.
-        limit_date: Date limite inférieure de recherche.
-        interval: Intervalle des klines.
+        symbol: Target trading pair symbol.
+        limit_date: Lower search limit date.
+        interval: Klines interval.
 
     Returns:
-        Une liste de chemins (`Path`) pointant vers les fichiers correspondants.
+        A list of paths (`Path`) pointing to the matching files.
     """
-    
     parquet_files = []
-
     base_dir = Path(DEFAULT_BASE_DIR)
     folder = base_dir / "klines" / f"interval={interval}" / f"symbol={symbol}"
 
-    # # today = datetime.today().replace(tzinfo=timezone.utc)
     first_month = limit_date.replace(day=1)
 
-
     for file_path in folder.glob("*.parquet"):
-            date_str = file_path.stem  # Format "YYYY-MM"
+        date_str = file_path.stem  # Format "YYYY-MM"
 
-            try:
-                file_date = datetime.strptime(date_str, "%Y-%m").replace(tzinfo=timezone.utc).replace(day=1)
-                   
-                # Conserve le fichier si son mois >= first_month
-                if file_date.date()  >= first_month:
-                    parquet_files.append(file_path)
+        try:
+            file_date = datetime.strptime(date_str, "%Y-%m").replace(tzinfo=timezone.utc).replace(day=1)
+               
+            # Keep file if its month >= first_month
+            if file_date.date() >= first_month:
+                parquet_files.append(file_path)
 
-            except ValueError:
-                continue
+        except ValueError:
+            continue
 
-    logger.info(f'{len(parquet_files)} parquet files found')
+    logger.info("%s parquet files found", len(parquet_files))
     return parquet_files
 
 
-def read_klines_from_parquet(parquet_files) -> pd.DataFrame :
-    """Lit une liste de fichiers Parquet et filtre les lignes selon la date limite.
+def read_klines_from_parquet(parquet_files: list) -> pd.DataFrame:
+    """Read a list of Parquet files and filter rows according to the limit date.
 
-        Args:
-            parquet_files: Liste des chemins de fichiers Parquet à charger.
+    Args:
+        parquet_files: List of Parquet file paths to load.
 
-        Returns:
-            Un DataFrame pandas consolidé et trié.
-        """
-    
+    Returns:
+        A consolidated and sorted pandas DataFrame.
+    """
     df_list = []
 
     for file_path in parquet_files:
@@ -175,10 +168,8 @@ def read_klines_from_parquet(parquet_files) -> pd.DataFrame :
 
     if df_list:
         df = pd.concat(df_list, ignore_index=True)
-
     else:
         df = pd.DataFrame(columns=OUTPUT_COLUMNS)
 
-    logger.info(f'{len(df)} rows read')
-
+    logger.info("%s rows read", len(df))
     return df

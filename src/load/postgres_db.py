@@ -1,5 +1,4 @@
-"""Module d'interaction avec la base de données PostgreSQL (insertions et requêtes)."""
-
+"""Module for PostgreSQL database interaction (insertions and queries)."""
 
 import psycopg2
 from psycopg2.extras import execute_values
@@ -9,13 +8,11 @@ from contextlib import closing
 import logging
 logger = logging.getLogger(__name__)
 
-
 from dotenv import load_dotenv
 
 load_dotenv() 
 
 CRYPTO_DB_URL = os.getenv('CRYPTO_DB_URL')
-
 
 OUTPUT_COLUMNS = [
     "symbol",
@@ -34,16 +31,12 @@ OUTPUT_COLUMNS = [
 ]
 
 
-def insert_coingecko_data(data_list : list):
-    """Enregistre les snapshots de marché CoinGecko dans la table PostgreSQL `market_snapshots`.
+def insert_coingecko_data(data_list: list) -> None:
+    """Save CoinGecko market snapshots into the PostgreSQL `market_snapshots` table.
 
     Args:
-        data_list: Liste des dictionnaires de données nettoyées.
-
-    Returns:
-        Le nombre de lignes insérées avec succès.
+        data_list: List of cleaned data dictionaries.
     """
-    
     with psycopg2.connect(CRYPTO_DB_URL) as conn:
         with conn.cursor() as cur:
             execute_values(
@@ -56,22 +49,20 @@ def insert_coingecko_data(data_list : list):
                 ON CONFLICT (coin_id, collected_at) DO NOTHING
                 """, 
                 data_list,
-                # On mappe chaque clé du dictionnaire vers la colonne correspondante
+                # Map each dictionary key to the corresponding column
                 template="(%(id)s, %(symbol)s, %(name)s, %(current_price)s, %(market_cap)s, %(total_volume)s, %(last_updated)s, %(collected_at)s)"
             )
 
 
-def get_unique_crypto(since_hours: int | None = 24) :
-    """Récupère les couples distincts `(coin_id, coin_symbol)` collectés récemment.
+def get_unique_crypto(since_hours: int | None = 24) -> list:
+    """Retrieve distinct `(coin_id, coin_symbol)` pairs collected recently.
 
     Args:
-        since_hours: Fenêtre temporelle en heures. Si None, interroge toute la table.
+        since_hours: Time window in hours. If None, queries the entire table.
 
     Returns:
-        Une liste de tuples représentant les cryptos uniques.
+        A list of tuples representing unique cryptocurrencies.
     """
-
-
     query = "SELECT DISTINCT coin_id, coin_symbol FROM market_snapshots"
     params = ()
     if since_hours is not None:
@@ -84,27 +75,25 @@ def get_unique_crypto(since_hours: int | None = 24) :
             cur.execute(query, params)
             res = cur.fetchall()
 
-            return res
-
-    if len(res) == 0 :
+    if not res:
         logger.warning("Couldn't find any unique crypto")
 
+    return res
+
+
 def insert_klines_data(df) -> int:
-    """Insère un lot de klines dans la table cible PostgreSQL `klines`.
+    """Insert a batch of klines into the target PostgreSQL `klines` table.
 
     Args:
-        df: DataFrame contenant les klines prêtes à être chargées.
+        df: DataFrame containing klines ready to be loaded.
 
     Returns:
-        Le nombre total de lignes réellement insérées.
+        The total number of rows actually inserted.
     """
-
     if df.empty:
         return 0
 
-    # tuples = [tuple(x) for x in df.to_numpy()]
     tuples = list(df[OUTPUT_COLUMNS].itertuples(index=False, name=None))
-
     columns_str = ", ".join(OUTPUT_COLUMNS)
 
     query = f"""
@@ -114,32 +103,28 @@ def insert_klines_data(df) -> int:
             RETURNING 1;
             """
     
-    crypto_db_url = os.environ["CRYPTO_DB_URL"]
-
-    with closing(psycopg2.connect(crypto_db_url)) as conn:
+    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
         with conn, conn.cursor() as cur:
             inserted = execute_values(cur, query, tuples, page_size=1000, fetch=True)
             num = len(inserted)
 
-    logger.info(f"{num} lignes insérées")
+    logger.info("%s rows inserted", num)
     return num
 
 
 def purge_old_klines(symbol: str, limit_date, interval: str = "1m") -> int:
-    """Supprime de la base de données les klines obsolètes pour un symbole donné.
+    """Delete obsolete klines for a given symbol from the database.
 
-    Cible les lignes dont l'`open_time` est strictement antérieur à `limit_date`.
+    Targets rows where `open_time` is strictly older than `limit_date`.
 
     Args:
-        symbol: Symbole de la paire.
-        limit_date: Date seuil de purge.
-        interval: Intervalle des bougies.
+        symbol: Trading pair symbol.
+        limit_date: Threshold date for purging.
+        interval: Candlestick interval.
 
     Returns:
-        Le nombre de lignes supprimées de la table.
+        The number of rows deleted from the table.
     """
-
-
     query = """
         DELETE FROM klines
         WHERE symbol = %s
@@ -148,30 +133,25 @@ def purge_old_klines(symbol: str, limit_date, interval: str = "1m") -> int:
     """
     params = (symbol, interval, limit_date)
 
-    crypto_db_url = os.environ["CRYPTO_DB_URL"]
-
-    with closing(psycopg2.connect(crypto_db_url)) as conn:
+    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
         with conn, conn.cursor() as cur:
             cur.execute(query, params)
             row_count = cur.rowcount
 
-    logger.info(f'{row_count} lignes supprimées de la table "klines"')
+    logger.info('%s rows deleted from table "klines"', row_count)
     return row_count
 
 
-def upsert_mapping(mapper: dict) -> int :
-
-    """Insère ou met à jour (Upsert) la table de correspondance des cryptos en base.
+def upsert_mapping(mapper: dict) -> int:
+    """Insert or update (Upsert) the crypto mapping table in the database.
 
     Args:
-        mapper: Dictionnaire de correspondance des symboles.
+        mapper: Dictionary mapping coin IDs to exchange symbols.
 
     Returns:
-        Le nombre de lignes affectées par l'opération.
+        The number of rows affected by the operation.
     """
-
-
-    if not mapper :
+    if not mapper:
         return 0
 
     query = f"""
@@ -183,45 +163,31 @@ def upsert_mapping(mapper: dict) -> int :
     
     params = list(mapper.items())
 
-    crypto_db_url = os.environ["CRYPTO_DB_URL"]
-
-    with closing(psycopg2.connect(crypto_db_url)) as conn:
+    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
         with conn, conn.cursor() as cur:
-            inserted = execute_values(cur, query, params)
+            execute_values(cur, query, params)
             num = cur.rowcount
 
-    logger.info(f"{num} lignes insérées")
-
+    logger.info("%s rows upserted", num)
     return num
 
-def get_all_symbols() -> list :
-    """Récupère la liste exhaustive des symboles Binance enregistrés dans `crypto_mapping`.
+
+def get_all_symbols() -> list:
+    """Retrieve the exhaustive list of Binance symbols registered in `crypto_mapping`.
 
     Returns:
-        Une liste de chaînes de caractères représentant les symboles.
+        A list of string symbols.
     """
-
     query = """
-            SELECT  binance_symbol
+            SELECT binance_symbol
             FROM crypto_mapping 
             ORDER BY binance_symbol;
             """
 
-
-    crypto_db_url = os.environ["CRYPTO_DB_URL"]
-
-    with closing(psycopg2.connect(crypto_db_url)) as conn:
-        with conn, conn.cursor() as cur :
-
+    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
+        with conn, conn.cursor() as cur:
             cur.execute(query)
-            # inserted = execute_values(cur, query,)
-            # num = cur.rowcount
             res = cur.fetchall()
-            num = cur.rowcount
 
-    logger.info(f"{num} symboles trouvés")
-
-    ma_liste = [x[0] for x in res]
-
-
-    return ma_liste
+    logger.info("%s symbols found", len(res))
+    return [x[0] for x in res]

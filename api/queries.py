@@ -1,5 +1,4 @@
 import psycopg2
-from psycopg2.extras import execute_values
 import os
 from contextlib import closing
 import logging
@@ -8,12 +7,8 @@ from datetime import date
 logger = logging.getLogger(__name__)
 
 
-def get_last_price(coin_id: str) -> tuple | None :
-
-    """
-    Récupère le dernier prix d'une monnaie
-    """
-
+def get_last_price(coin_id: str) -> list | None:
+    """Retrieve the latest price record for a specific coin."""
     query = """
             SELECT coin_id, current_price, collected_at
             FROM market_snapshots 
@@ -24,36 +19,27 @@ def get_last_price(coin_id: str) -> tuple | None :
 
     crypto_db_url = os.environ["CRYPTO_DB_URL"]
 
+    # Connect and fetch the most recent market snapshot
     with closing(psycopg2.connect(crypto_db_url)) as conn:
-        with conn, conn.cursor() as cur :
+        with conn, conn.cursor() as cur:
             cur.execute(query, (coin_id,))
             res = cur.fetchone()
 
-    # logger.info(f"{num} symboles trouvés")
-
-    if res :
-        return list(res)
-    else :
-        return None
+    return list(res) if res else None
 
 
-def get_db_klines(coin_id: str, start : date, end : date) :
-    """
-    Récupère les klines d'une monnaie entre 2 datetime.
-    """
+def get_db_klines(coin_id: str, start: date, end: date) -> dict | None:
+    """Retrieve historical candlestick (klines) data for a coin within a date range."""
     crypto_db_url = os.environ["CRYPTO_DB_URL"]
-
-    selected_col = ['open_time','open', 'high', 'low','close','volume']
+    selected_col = ['open_time', 'open', 'high', 'low', 'close', 'volume']
 
     query1 = """
             SELECT binance_symbol
             FROM crypto_mapping
-            WHERE coin_id = %s ;
+            WHERE coin_id = %s;
             """
     
-    param1 = (coin_id,)
-
-    query2 = f"""
+    query2 = """
             SELECT 
                 open::float8 AS open,
                 high::float8 AS high,
@@ -65,27 +51,30 @@ def get_db_klines(coin_id: str, start : date, end : date) :
             WHERE symbol = %s
             AND interval = '1m'
             AND open_time >= %s
-            AND close_time <= %s ;
+            AND close_time <= %s;
             """
 
     with closing(psycopg2.connect(crypto_db_url)) as conn:
-        with conn, conn.cursor() as cur :
-            cur.execute(query1, param1)
-            symbol = cur.fetchone()[0]
+        with conn, conn.cursor() as cur:
+            # Map coin_id to exchange symbol
+            cur.execute(query1, (coin_id,))
+            symbol_row = cur.fetchone()
+            if not symbol_row:
+                return None
+            symbol = symbol_row[0]
 
-            param2 = (symbol, start, end)
-            cur.execute(query2, param2)
-                 
+            # Fetch klines data
+            cur.execute(query2, (symbol, start, end))
             res = cur.fetchall()
 
+    if not res:
+        return None
 
-        if res :
-
-            candles = [dict(zip(selected_col, x)) for x in res]
-            
-            answer = {"coin_id": coin_id, 
-                      "symbol": symbol, 
-                      "count": len(res),
-                      "candles" : candles}
-
-        return answer
+    # Format results into a dictionary response
+    candles = [dict(zip(selected_col, x)) for x in res]
+    return {
+        "coin_id": coin_id, 
+        "symbol": symbol, 
+        "count": len(res),
+        "candles": candles
+    }
