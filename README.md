@@ -6,7 +6,7 @@
 
 **Contexte** : Analyser les cryptos nécessite des données temps réel multi-sources fiables.
 
-**Défi** : Agréger des flux hétérogènes (prix, volume, social) depuis plusieurs APIs avec une haute disponibilité.
+**Défi** : Agréger des flux hétérogènes (prix, volume) depuis plusieurs APIs avec une haute disponibilité.
 
 **Objectif** : Pipeline stable collectant **50+ cryptos à la minute** avec historique et serving API.
 
@@ -35,9 +35,8 @@
 
 - **Orchestration** : Apache Airflow
 - **Storage** : PostgreSQL + Parquet
-- **Processing** : pandas ou PySpark
+- **Processing** : pandas
 - **API** : FastAPI, Docker
-- **Cloud** : AWS S3 ou Azure Blob (optionnel)
 
 ---
 

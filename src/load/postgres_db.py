@@ -31,28 +31,33 @@ OUTPUT_COLUMNS = [
 ]
 
 
-def insert_coingecko_data(data_list: list) -> None:
+
+def insert_coingecko_data(data_list: list[dict]) -> None:
     """Save CoinGecko market snapshots into the PostgreSQL `market_snapshots` table.
 
+    Duplicates on (coin_id, collected_at) are silently ignored, so a retry
+    does not fail.
+
     Args:
-        data_list: List of cleaned data dictionaries.
+        data_list: List of validated dictionaries (keys = column names).
     """
-    with psycopg2.connect(CRYPTO_DB_URL) as conn:
-        with conn.cursor() as cur:
+    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
+        with conn, conn.cursor() as cur:
             execute_values(
-                cur, 
+                cur,
                 """
                 INSERT INTO market_snapshots
-                    (coin_id, coin_symbol, coin_name, current_price, market_cap, total_volume,
-                    last_updated, collected_at)
+                    (coin_id, coin_symbol, coin_name, current_price, market_cap,
+                     total_volume, last_updated, collected_at)
                 VALUES %s
                 ON CONFLICT (coin_id, collected_at) DO NOTHING
-                """, 
+                """,
                 data_list,
-                # Map each dictionary key to the corresponding column
-                template="(%(id)s, %(symbol)s, %(name)s, %(current_price)s, %(market_cap)s, %(total_volume)s, %(last_updated)s, %(collected_at)s)"
+                template=(
+                    "(%(coin_id)s, %(coin_symbol)s, %(coin_name)s, %(current_price)s, "
+                    "%(market_cap)s, %(total_volume)s, %(last_updated)s, %(collected_at)s)"
+                ),
             )
-
 
 def get_unique_crypto(since_hours: int | None = 24) -> list:
     """Retrieve distinct `(coin_id, coin_symbol)` pairs collected recently.

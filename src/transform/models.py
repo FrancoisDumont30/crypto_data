@@ -1,8 +1,12 @@
 """Module for cleaning, typing, and transforming raw payloads."""
 
+import logging
 import pandas as pd
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from datetime import datetime, timezone
+from pydantic import BaseModel, AwareDatetime, ValidationError, Field, ConfigDict
+
+logger = logging.getLogger(__name__)
 
 RAW_COLUMNS = [
     "open_time",
@@ -46,59 +50,6 @@ OUTPUT_COLUMNS = [
     "taker_buy_quote_volume",
 ]
 
-
-def safe_string(val, max_length=None) -> str | None:
-    """Clean and secure a raw character string.
-
-    Args:
-        val: Raw input value.
-        max_length: Optional maximum length to truncate the string.
-
-    Returns:
-        The cleaned string, or None if the value is empty.
-    """
-    if val is None:
-        return None
-    text = str(val).strip()
-    if max_length and len(text) > max_length:
-        return text[:max_length]
-    return text
-
-
-def safe_datetime(val) -> datetime | None:
-    """Convert an ISO string to a UTC datetime, or return None if empty.
-
-    Args:
-        val: Character string in ISO format.
-
-    Returns:
-        A timezone-aware datetime object (UTC) or None.
-    """
-    if not val:
-        return None
-    if isinstance(val, str):
-        return datetime.fromisoformat(val.replace("Z", "+00:00"))
-    return val
-
-
-def safe_numeric(val) -> Decimal | None:
-    """Properly convert a value to Decimal for PostgreSQL NUMERIC types.
-
-    Args:
-        val: Raw numeric value (int, float, str).
-
-    Returns:
-        A secure Decimal object or None.
-    """
-    if val is None:
-        return None
-    try:
-        # Using str() avoids inaccuracies from native Python floats
-        return Decimal(str(val))
-    except (InvalidOperation, TypeError):
-        return None
-
-
 def transform(raw: list[list], symbol: str, interval: str) -> pd.DataFrame:
     """Transform raw Binance klines lists into structured DataFrames.
 
@@ -134,46 +85,58 @@ def transform(raw: list[list], symbol: str, interval: str) -> pd.DataFrame:
     return df
 
 
-# Type configuration dictionary per column
-COLUMN_MAPPINGS = {
-    "coin_id": safe_string,
-    "coin_symbol": safe_string,
-    "coin_name": safe_string,
-    "current_price": safe_numeric,
-    "market_cap": safe_numeric,
-    "total_volume": safe_numeric,
-    "last_updated": safe_datetime,
-    "collected_at": safe_datetime,
-}
+
+class MarketSnapshot(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    coin_id: str = Field(alias="id")
+    coin_symbol: str = Field(alias="symbol")
+    coin_name: str = Field(alias="name")
+    current_price: Decimal | None = None
+    market_cap: Decimal | None = None
+    total_volume: Decimal | None = None
+    last_updated: AwareDatetime | None = None
+    collected_at: AwareDatetime
 
 
 def process_coingecko_data(raw_data: list[dict]) -> list[dict]:
-    """Process and normalize raw data from CoinGecko.
+    """Process and validate raw data from CoinGecko using Pydantic.
 
-    Filters relevant fields and adds a normalized timestamp (`collected_at`).
+    Individual invalid lines are logged as warnings and skipped.
 
     Args:
         raw_data: Raw list of CoinGecko snapshots.
 
     Returns:
-        A list of cleaned and standardized dictionaries.
+        A list of validated and standardized dictionaries.
+    
+    Raises:
+        RuntimeError: If raw_data is empty or if the data rejection rate exceeds 50%.
     """
-    FIELDS = ["id", "symbol", "name", "current_price", "market_cap", "total_volume", "last_updated"]
-    collected_at = datetime.now(timezone.utc).replace(microsecond=0)
 
+    if not raw_data:
+        raise RuntimeError("Received empty raw data from CoinGecko API.")
+    
+    collected_at = datetime.now(timezone.utc).replace(microsecond=0)
     processed_list = []
+    rejected_count = 0
+    total_count = len(raw_data)
+
     for d in raw_data:
-        filtered_dict = {}
-        for k in FIELDS:
-            if k in d:
-                val = d[k]
-                if k in COLUMN_MAPPINGS:
-                    filtered_dict[k] = COLUMN_MAPPINGS[k](val)
-                else:
-                    filtered_dict[k] = val
-        
-        # Add collection timestamp for each dictionary in the loop
-        filtered_dict["collected_at"] = collected_at
-        processed_list.append(filtered_dict)
+        row_data = {**d, "collected_at": collected_at}
+        try:
+            snapshot = MarketSnapshot.model_validate(row_data)
+            processed_list.append(snapshot.model_dump())
+        except ValidationError as e:
+            rejected_count += 1
+            coin_id = d.get("id", "unknown")
+            logger.warning("Invalid data for coin_id '%s': %s", coin_id, e.errors())
+
+    # Alert
+    if rejected_count / total_count > 0.5:
+        raise RuntimeError(
+            f"Abnormal data rejection rate: {rejected_count}/{total_count} rows rejected. "
+            "API format might have changed."
+        )
 
     return processed_list
