@@ -35,14 +35,16 @@ x-airflow-common:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg://airflow:airflow@postgres/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://airflow:${POSTGRES_PASSWORD:?manquant dans .env}@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg://airflow:${POSTGRES_PASSWORD:?manquant dans .env}@postgres/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
+    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "${VAULT_DEV_TOKEN:?manquant dans .env}", "mount_point": "secret", "connections_path": "connections", "variables_path": "variables"}'
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
-    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-airflow_jwt_secret}
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:?manquant dans .env}
     AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER:-airflow}
     # yamllint disable rule:line-length
     # Use simple http server on scheduler for health checks
@@ -62,8 +64,6 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/data:/opt/airflow/data
     - ${AIRFLOW_PROJ_DIR:-.}/tests:/opt/airflow/tests
     - ${AIRFLOW_PROJ_DIR:-.}/storage:/opt/airflow/storage
-    # - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config       test suppression
-    # - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins     test suppression
     - ${AIRFLOW_PROJ_DIR:-.}/src:/opt/airflow/src
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
@@ -72,13 +72,15 @@ x-airflow-common:
       condition: service_healthy
     postgres:
       condition: service_healthy
+    vault :
+      condition : service_healthy
 
 services:
   postgres:
     image: postgres:16
     environment:
       POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?manquant dans .env}
       POSTGRES_DB: airflow
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -162,7 +164,6 @@ services:
       start_period: 30s
     environment:
       <<: *airflow-common-env
-      CRYPTO_DB_URL: ${CRYPTO_DB_URL}
       # Required to handle warm shutdown of the celery workers properly
       # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
       DUMB_INIT_SETSID: "0"
@@ -277,7 +278,7 @@ services:
       _AIRFLOW_DB_MIGRATE: 'true'
       _AIRFLOW_WWW_USER_CREATE: 'true'
       _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
-      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:?manquant dans .env}
       _PIP_ADDITIONAL_REQUIREMENTS: ''
     user: "0:0"
 
@@ -323,13 +324,32 @@ services:
     container_name: fastapi-application
     environment:
       PORT: 8000
-      CRYPTO_DB_URL: postgresql://airflow:airflow@postgres:5432/crypto
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_DEV_TOKEN:?manquant dans .env} dans environment
     ports:
       - '8000:8000'
     restart: always
     depends_on :
       postgres:
         condition: service_healthy
+
+  vault:
+    image: hashicorp/vault:1.18
+    command: server -dev
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_TOKEN:?manquant dans .env}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://127.0.0.1:8200
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
 
 volumes:
   pgdata:

@@ -9,7 +9,6 @@ app = FastAPI(title="Crypto API")
 
 MAX_RANGE = timedelta(days=7)
 
-
 @app.middleware("http")
 async def add_process_time(request: Request, call_next):
     """Add the server-side processing time (ms) in the X-Process-Time header."""
@@ -31,7 +30,7 @@ def health():
 
 
 
-CoinId = Annotated[str, Path(min_length=1, max_length=64, pattern=r"^[a-z0-9\-]+$")]
+
 
 
 @app.get('/price/{coin_id}', 
@@ -64,7 +63,7 @@ def get_price(coin_id: str):
         },)
 
 def get_klines(
-    coin_id: CoinId,
+    coin_id: Annotated[str, Path(min_length=1, max_length=64, pattern=r"^[a-z0-9\-]+$")],
     start: Annotated[datetime, Query(description="ISO 8601 with timezone, e.g. 2026-11-17T00:00:00Z")],
     end: Annotated[datetime, Query(description="ISO 8601 with timezone, e.g. 2026-11-18T00:00:00Z")],
 ):

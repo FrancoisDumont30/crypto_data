@@ -2,17 +2,15 @@
 
 import psycopg2
 from psycopg2.extras import execute_values
-import os
 from contextlib import closing
+from airflow.sdk import BaseHook
 
 import logging
 logger = logging.getLogger(__name__)
 
-from dotenv import load_dotenv
-
-load_dotenv() 
-
-CRYPTO_DB_URL = os.getenv('CRYPTO_DB_URL')
+def get_db_url():
+    from airflow.sdk import BaseHook
+    return BaseHook.get_connection("crypto_db").get_uri()
 
 OUTPUT_COLUMNS = [
     "symbol",
@@ -41,7 +39,7 @@ def insert_coingecko_data(data_list: list[dict]) -> None:
     Args:
         data_list: List of validated dictionaries (keys = column names).
     """
-    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
+    with closing(psycopg2.connect(get_db_url())) as conn:
         with conn, conn.cursor() as cur:
             execute_values(
                 cur,
@@ -75,7 +73,7 @@ def get_unique_crypto(since_hours: int | None = 24) -> list:
         params = (since_hours,)
     query += " ORDER BY coin_id"
 
-    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
+    with closing(psycopg2.connect(get_db_url())) as conn:
         with conn, conn.cursor() as cur:
             cur.execute(query, params)
             res = cur.fetchall()
@@ -108,7 +106,7 @@ def insert_klines_data(df) -> int:
             RETURNING 1;
             """
     
-    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
+    with closing(psycopg2.connect(get_db_url())) as conn:
         with conn, conn.cursor() as cur:
             inserted = execute_values(cur, query, tuples, page_size=1000, fetch=True)
             num = len(inserted)
@@ -138,7 +136,7 @@ def purge_old_klines(symbol: str, limit_date, interval: str = "1m") -> int:
     """
     params = (symbol, interval, limit_date)
 
-    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
+    with closing(psycopg2.connect(get_db_url())) as conn:
         with conn, conn.cursor() as cur:
             cur.execute(query, params)
             row_count = cur.rowcount
@@ -168,7 +166,7 @@ def upsert_mapping(mapper: dict) -> int:
     
     params = list(mapper.items())
 
-    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
+    with closing(psycopg2.connect(get_db_url())) as conn:
         with conn, conn.cursor() as cur:
             execute_values(cur, query, params)
             num = cur.rowcount
@@ -189,7 +187,7 @@ def get_all_symbols() -> list:
             ORDER BY binance_symbol;
             """
 
-    with closing(psycopg2.connect(CRYPTO_DB_URL)) as conn:
+    with closing(psycopg2.connect(get_db_url())) as conn:
         with conn, conn.cursor() as cur:
             cur.execute(query)
             res = cur.fetchall()

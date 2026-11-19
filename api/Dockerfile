@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 # Installer les dépendances Python directement
-RUN pip install --no-cache-dir fastapi uvicorn psycopg2-binary
+RUN pip install --no-cache-dir fastapi uvicorn psycopg2-binary hvac
 
 # Copier le fichier principal de l'API
 COPY . .
