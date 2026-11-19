@@ -1,7 +1,5 @@
 from transform.mappers import build_crypto_mapping
 import logging
-# name
-# test_<fonction>_<situation>_<résultat>
 
 
 def test_maps_every_symbol_present_on_binance():
