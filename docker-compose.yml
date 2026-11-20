@@ -346,10 +346,11 @@ services:
       - "8200:8200"
     healthcheck:
       test: ["CMD", "vault", "status"]
-      interval: 10s
-      retries: 5
-      start_period: 5s
-    restart: always
+      interval: 5s
+      timeout : 3s
+      retries: 10
+      start_period: 3s
+    restart: no
 
 volumes:
   pgdata:
