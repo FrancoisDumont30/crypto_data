@@ -6,6 +6,11 @@ __pycache__/
 data/
 logs/
 
-
 .venv
 .env
+
+# WARNING: local dev setup only.
+# vault/keys.json holds the Vault unseal key and the root token. Never commit it.
+# In production, store unseal keys separately from the Vault data (password manager,
+# key shares split between several people, or auto-unseal through a cloud KMS).
+vault/keys.json

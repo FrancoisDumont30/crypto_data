@@ -17,20 +17,18 @@ async def add_process_time(request: Request, call_next):
     response.headers["X-Process-Time"] = f"{(time.perf_counter() - start) * 1000:.1f}"
     return response
 
+
 @app.get("/")
 def read_root():
     """Root endpoint welcoming users and directing to documentation."""
     # Return a welcome message with a pointer to the Swagger UI
     return {"message": "Welcome to the Crypto API! Go to /docs to see the documentation."}
 
+
 @app.get("/health")
 def health():
     """Health check endpoint to verify the API is running."""
     return {"status": "ok"}
-
-
-
-
 
 
 @app.get('/price/{coin_id}', 

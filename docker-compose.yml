@@ -40,7 +40,7 @@ x-airflow-common:
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
     AIRFLOW__SECRETS__BACKEND: airflow.providers.hashicorp.secrets.vault.VaultBackend
-    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "token": "${VAULT_DEV_TOKEN:?manquant dans .env}", "mount_point": "secret", "connections_path": "connections", "variables_path": "variables"}'
+    AIRFLOW__SECRETS__BACKEND_KWARGS: '{"url": "http://vault:8200", "auth_type": "approle", "role_id": "${VAULT_ROLE_ID:-}", "secret_id": "${VAULT_SECRET_ID:-}", "mount_point": "secret", "connections_path": "connections", "variables_path": "variables"}'
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
     AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
@@ -325,7 +325,8 @@ services:
     environment:
       PORT: 8000
       VAULT_ADDR: http://vault:8200
-      VAULT_TOKEN: ${VAULT_DEV_TOKEN:?manquant dans .env} dans environment
+      VAULT_ROLE_ID: ${VAULT_ROLE_ID:-}
+      VAULT_SECRET_ID: ${VAULT_SECRET_ID:-}
     ports:
       - '8000:8000'
     restart: always
@@ -335,22 +336,24 @@ services:
 
   vault:
     image: hashicorp/vault:1.18
-    command: server -dev
-    environment:
-      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_TOKEN:?manquant dans .env}
-      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
-      VAULT_ADDR: http://127.0.0.1:8200
+    command: server
     cap_add:
       - IPC_LOCK
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
     ports:
       - "8200:8200"
+    volumes:
+      - vault_data:/vault/file
+      - ./vault/config.hcl:/vault/config/config.hcl:ro
     healthcheck:
-      test: ["CMD", "vault", "status"]
+      test: ["CMD-SHELL", "vault status >/dev/null 2>&1; [ $$? -ne 1 ]"]
       interval: 5s
-      timeout : 3s
+      timeout: 3s
       retries: 10
       start_period: 3s
-    restart: no
+    restart: unless-stopped
 
 volumes:
   pgdata:
+  vault_data:
