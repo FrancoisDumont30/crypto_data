@@ -28,14 +28,22 @@ if [ "$SEALED" = "true" ]; then
   echo "Vault déverrouillé."
 fi
 
-# 5. Générer les identifiants AppRole d'Airflow (le token root ne sert qu'ici)
+# 5. Générer les identifiants AppRole (le token root ne sert qu'ici)
 export VAULT_TOKEN=$(jq -r '.root_token' "$KEYS")
+
+# Airflow
 VAULT_ROLE_ID=$(docker compose exec -T -e VAULT_TOKEN vault vault read -field=role_id auth/approle/role/airflow/role-id)
 VAULT_SECRET_ID=$(docker compose exec -T -e VAULT_TOKEN vault vault write -f -field=secret_id auth/approle/role/airflow/secret-id)
 export VAULT_ROLE_ID VAULT_SECRET_ID
+
+# Streamlit
+STREAMLIT_VAULT_ROLE_ID=$(docker compose exec -T -e VAULT_TOKEN vault vault read -field=role_id auth/approle/role/streamlit/role-id)
+STREAMLIT_VAULT_SECRET_ID=$(docker compose exec -T -e VAULT_TOKEN vault vault write -f -field=secret_id auth/approle/role/streamlit/secret-id)
+export STREAMLIT_VAULT_ROLE_ID STREAMLIT_VAULT_SECRET_ID
+
 unset VAULT_TOKEN
 
 # 6. Lancer le reste
-docker compose up -d
+docker compose up -d --build
 
 echo "Pipeline démarré."

@@ -354,6 +354,25 @@ services:
       start_period: 3s
     restart: unless-stopped
 
+  streamlit:
+    build: ./bi
+    ports:
+      - "8501:8501"
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_ROLE_ID: ${STREAMLIT_VAULT_ROLE_ID:-}
+      VAULT_SECRET_ID: ${STREAMLIT_VAULT_SECRET_ID:-}
+      STREAMLIT_SERVER_RUN_ON_SAVE: "true"
+    depends_on:
+      vault:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./bi:/app
+    
+
 volumes:
   pgdata:
   vault_data:
