@@ -126,12 +126,12 @@ def get_prices(stride: str, start, end) -> pd.DataFrame:
 
 def show_variation(column, label: str, row: pd.Series, color: str) -> None:
     """Libellé, puis une ligne : nom · symbole Binance · variation colorée."""
-    column.subheader(label)
-    column.subheader(
-        f"{row['coin_name']} ({row['symbol']}) : \t"
-        f":{color}[{row['variation_pct']:+.2f} %]"
-    )
-
+    with column.container(border=True):
+        st.subheader(label)
+        st.subheader(
+            f"{row['coin_name']} ({row['symbol']}) : "
+            f":{color}[{row['variation_pct']:+.2f} %]"
+        )
 
 # --- 1. Titre ---
 st.title("Crypto BI")
@@ -143,9 +143,7 @@ if pd.isna(last_open):
     st.stop()
 
 st.write(
-    f"Dernières données : {last_open:%d/%m/%Y %H:%M}"
-)
-
+    f"Dernières données : {last_open:%d/%m/%Y %H:%M}")
 
 # --- 3. Période (défaut : 30 derniers jours, ancrés sur la dernière bougie) ---
 st.subheader("Choix de la période")
@@ -185,7 +183,8 @@ best = variations.loc[variations["variation_pct"].idxmax()]
 worst = variations.loc[variations["variation_pct"].idxmin()]
 
 st.subheader("Les plus grandes variations de prix :")
-col_sapce, col_up, col_down = st.columns([.5,2,5])
+col_sapce, col_up, one_space,col_down, space2 = st.columns([.5,1,.5,1,3])
+
 show_variation(col_up, "Plus forte hausse", best, "green")
 show_variation(col_down, "Plus forte baisse", worst, "red")
 st.divider()

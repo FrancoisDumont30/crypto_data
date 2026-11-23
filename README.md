@@ -10,6 +10,7 @@ prix à la minute (CoinGecko) et historique de bougies 1 minute (Binance), expos
 ![Vault](https://img.shields.io/badge/Vault-1.18-FFEC6E?logo=vault&logoColor=black)
 ![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC?logo=pytest&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-1.67-3776AB?logo=Streamlit&logoColor=white)
 ![pandas](https://img.shields.io/badge/pandas-3.1-150458?logo=pandas&logoColor=white)
 
 ---
@@ -30,7 +31,7 @@ Ce projet agrège des flux hétérogènes (prix, volume, market cap, bougies) is
 | Fréquence de collecte | CoinGecko toutes les minutes ; Binance quotidien (incrémental) | ✅ DAGs en production locale |
 | Retry logic | Gestion automatique des erreurs API | ✅ Retries Airflow + retries/rate limit côté client HTTP |
 | Latence API | < 200 ms | ✅ **~14 ms (1 jour) / ~50 ms (7 jours)** de médiane |
-| Disponibilité | > 99 % (mesurée sur un PC avec Docker) | ⏳ _À renseigner : valeur mesurée_ |
+| Disponibilité | > 99 % | ⏳ 99,71 % (sur une fenêtre de 6h)|
 
 ## 🏗️ Architecture
 
@@ -68,6 +69,7 @@ La connexion à la base `crypto` est stockée dans **HashiCorp Vault** (`secret/
 | API | FastAPI |
 | Conteneurisation | Docker Compose |
 | Secrets | HashiCorp Vault (mode serveur, stockage persistant, accès Airflow via AppRole) |
+| BI | Streamlit, Plotly |
 | Qualité | pytest |
 
 ## 📦 Structure du projet
@@ -77,6 +79,12 @@ project_crypto/
 ├── docker-compose.yml
 │
 ├── requirements.txt
+│
+├── bi/                             # app Streamlit (BI)
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── db.py                       # accès Vault + requêtes PostgreSQL
+│   └── app.py                      # dashboard
 │
 ├── dags/
 │   ├── coingecko_dag.py            # crypto_collect_minute (chaque minute)
@@ -103,13 +111,15 @@ project_crypto/
 │      └── main, schema, queries,...
 │                         
 ├── storage/
-│   └── schema.sql                  # market_snapshots, klines
+│   ├──  schema.sql                 # market_snapshots, klines
+│   └── bi.sql                      # schéma bi, vues, rôle bi_ro (lecture seule)
 │
 ├── tests/                          # tests pytest
 │
 ├── vault/
 │   ├── config.hcl                  # config Vault (stockage fichier, listener HTTP)
 │   ├── airflow-read.hcl            # policy : lecture seule de connections/* et variables/*
+│   ├── bi-read.hcl
 │   ├── start.sh                    # point d'entrée : déverrouille Vault, génère les accès Airflow, lance Docker
 │   └── keys.json                   # clé de déverrouillage + token root (NON versionné)
 │
@@ -288,6 +298,30 @@ curl "http://localhost:8000/klines/bitcoin?start=2026-11-20T09:00:00Z&end=2026-1
 | 404 | `/klines` | Aucune bougie sur la période : crypto inconnue, crypto sans paire Binance ou période hors historique |
 | 422 | `/klines` | `start` ≥ `end`, période > 7 jours, date invalide ou `coin_id` au mauvais format |
 
+
+## 📈 Dashboard BI (Streamlit)
+
+Application disponible sur http://localhost:8501
+
+**Contenu :**
+1. Choix de la période du dashboard
+2. Les plus forte évolutions de prix (hausse et baisse)
+3. Top 5 des cryptos les plus chères
+4. Graphique en chandeliers d'une crypto (choix par nom)
+
+**Données**
+- Schéma `bi` : seule interface entre le dashboard et la base.
+- Vue `bi.v_klines_1m` : bougies d'une minute de toutes les paires Binance (symbole, heure d'ouverture, open, high, low, close, volume), lues dans `public.klines`. Les bougies plus grandes (5 min, 1 h, 1 jour) sont agrégées à la volée par la requête (`date_bin`).
+- Vue `bi.v_latest_prices` : dernier prix connu de chaque crypto CoinGecko (nom, symbole, prix, date de collecte), lu dans `public.market_snapshots`. Elle alimente le top 5 et fait le lien avec Binance (symbole CoinGecko + `USDT`).
+- Seules les colonnes utiles au dashboard sont exposées (pas de capitalisation ni de volume CoinGecko).
+
+**Architecture et sécurité :**
+- Streamlit : rôle `bi_ro`, lecture seule des schéma PostgreSQL `bi`, aucun droit sur les tables `public`.
+- Les identifiants de `bi_ro` sont stockés dans Vault (`secret/bi/crypto_bi_ro`).  
+
+**Limites connues :**
+- Les bougies en base ne couvrent que 7 jours glissants : une période plus longue est affichée mais limitée à cet historique.
+- Seules les cryptos ayant une paire USDT sur Binance apparaissent.
 
 ## ⚡ Performances
 Mesures sur `bitcoin`, en local (Docker, PC personnel).  

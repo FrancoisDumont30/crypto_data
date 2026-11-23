@@ -1,7 +1,7 @@
 -- Schéma dédié à la BI
 CREATE SCHEMA IF NOT EXISTS bi;
 
--- Vue des bougies 1m (seule chose que Streamlit pourra lire)
+-- Vue des bougies 1m
 CREATE OR REPLACE VIEW bi.v_klines_1m AS
 SELECT
     symbol,
@@ -14,13 +14,12 @@ SELECT
 FROM public.klines
 WHERE "interval" = '1m';
 
--- Rôle en lecture seule (mot de passe fourni en variable psql, jamais en dur)
+-- Rôle en lecture seule
 CREATE ROLE bi_ro LOGIN PASSWORD :'bi_pwd';
 
 GRANT CONNECT ON DATABASE crypto TO bi_ro;
 GRANT USAGE ON SCHEMA bi TO bi_ro;
 GRANT SELECT ON bi.v_klines_1m TO bi_ro;
-
 
 
 -- Dernier prix connu de chaque crypto (pour le top 5)
@@ -30,10 +29,8 @@ SELECT DISTINCT ON (coin_id)
     coin_symbol,
     coin_name,
     current_price,
-    market_cap,
-    total_volume,
     collected_at
 FROM public.market_snapshots
-ORDER BY coin_id, collected_at DESC;
+ORDER BY coin_id, collected_at DESC ;
 
 GRANT SELECT ON bi.v_latest_prices TO bi_ro;
