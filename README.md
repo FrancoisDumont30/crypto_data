@@ -214,6 +214,7 @@ docker compose ps
 | Airflow UI | http://localhost:8080 |
 | API FastAPI | http://localhost:8000 |
 | API Swagger UI (Doc API) | http://localhost:8000/docs |
+| Streamlit | http://localhost:8501 |
 | Vault UI (administration) | http://127.0.0.1:8200 (token root dans `vault/keys.json`) |
 
 
@@ -322,6 +323,12 @@ Application disponible sur http://localhost:8501
 **Limites connues :**
 - Les bougies en base ne couvrent que 7 jours glissants : une période plus longue est affichée mais limitée à cet historique.
 - Seules les cryptos ayant une paire USDT sur Binance apparaissent.
+
+**Screenshots**  
+  
+![](img/screen1.png)
+![](img/screen2.png)
+
 
 ## ⚡ Performances
 Mesures sur `bitcoin`, en local (Docker, PC personnel).  
