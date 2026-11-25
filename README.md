@@ -1,7 +1,7 @@
 # ⚙️ Crypto Trading Pipeline
 
-Pipeline de données pour collecter, stocker et servir les données de marché de plus de **50 cryptomonnaies** :  
-prix à la minute (CoinGecko) et historique de bougies 1 minute (Binance), exposés via une API REST.
+Data pipeline that collects, stores and serves market data for more than **50 cryptocurrencies**:
+per-minute prices (CoinGecko) and 1-minute candle history (Binance), exposed through a REST API.
 
 ![Airflow](https://img.shields.io/badge/Airflow-3.4.0-017CEE?logo=apacheairflow&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
@@ -15,64 +15,63 @@ prix à la minute (CoinGecko) et historique de bougies 1 minute (Binance), expos
 
 ---
 
-## 📌 Contexte
+## 📌 Context
 
-Analyser les cryptomonnaies nécessite des données multi-sources fiables.  
-Ce projet agrège des flux hétérogènes (prix, volume, market cap, bougies) issus de plusieurs APIs publiques gratuites, avec :
+Analysing cryptocurrencies requires reliable data from several sources.
+This project aggregates heterogeneous feeds (price, volume, market cap, candles) from several free public APIs, with:
 
-- une **collecte automatisée et résiliente** (retries, reprise incrémentale) ;
-- un **stockage hybride** : PostgreSQL pour le récent, Parquet pour l'historique ;
-- une **API de serving** à faible latence.
+- **automated and resilient collection** (retries, incremental resume);
+- **hybrid storage**: PostgreSQL for recent data, Parquet for history;
+- a **low-latency serving API**.
 
-## 🎯 Objectifs et résultats
+## 🎯 Goals and results
 
-| Critère | Objectif | Résultat |
-|---------|----------|----------|
-| Fréquence de collecte | CoinGecko toutes les minutes ; Binance quotidien (incrémental) | ✅ DAGs en production locale |
-| Retry logic | Gestion automatique des erreurs API | ✅ Retries Airflow + retries/rate limit côté client HTTP |
-| Latence API | < 200 ms | ✅ **~14 ms (1 jour) / ~50 ms (7 jours)** de médiane |
-| Disponibilité | > 99 % | ⏳ 99,71 % (sur une fenêtre de 6h)|
+| Criterion | Goal | Result |
+|-----------|------|--------|
+| Collection frequency | CoinGecko every minute; Binance daily (incremental) | ✅ DAGs running in a local production-like setup |
+| Retry logic | Automatic handling of API errors | ✅ Airflow retries + retries and rate limiting in the HTTP client |
+| API latency | < 200 ms | ✅ **~14 ms (1 day) / ~50 ms (7 days)** median |
+| Availability | > 99% | ⏳ 99.71% (measured over a 6-hour window) |
 
 ## 🏗️ Architecture
 
-
 ![](/img/architecture.jpg)
 
-### Choix de conception
+### Design choices
 
+- **Hybrid storage**:
+PostgreSQL for recent data queried by the API (`market_snapshots`, and `klines` over a rolling 7 days);
+Parquet partitioned by interval/symbol/month for history.
+- **One Airflow task per pair** using *dynamic task mapping* (`.expand()`): error isolation and controlled parallelism (`max_active_tis_per_dag`).
+Each task only returns a **summary** (no large payloads in XCom).
+- **Idempotent incremental ingestion**: 30-day backfill on the first run, then resume from the last known candle.
+The in-progress candle is excluded and duplicates are removed (Parquet merge, `ON CONFLICT DO NOTHING` in the database).
+- **CoinGecko -> Binance matching**: 34 of 51 cryptos have a USDT pair with `TRADING` status on Binance.
+The other 17 are logged as *warnings* and are only tracked through CoinGecko.
 
-- **Stockage hybride** :   
-PostgreSQL pour les données récentes et requêtées par l'API (`market_snapshots`, `klines` sur 7 jours glissants) ;   
-Parquet partitionné par intervalle/symbole/mois pour l'historique.
-- **Une tâche Airflow par paire** via le *dynamic task mapping* (`.expand()`) : isolation des erreurs et parallélisme contrôlé (`max_active_tis_per_dag`).   
-Chaque tâche ne renvoie qu'un **résumé** (pas de gros volumes dans XCom).
-- **Ingestion incrémentale idempotente** : backfill de 30 jours au premier passage, puis reprise à partir de la dernière bougie connue.  
- La bougie en cours est exclue, les doublons sont éliminés (fusion Parquet, `ON CONFLICT DO NOTHING` en base).
-- **Correspondance CoinGecko → Binance** : 34 cryptos sur 51 ont une paire USDT en statut `TRADING` sur Binance.   
-Les 17 autres sont journalisées en *warning* et restent suivies via CoinGecko uniquement.
+## 🔐 Secrets management
 
-## 🔐 Gestion des secrets
+- **No application password in the code or in `docker-compose.yml`.**
+The connection to the `crypto` database is stored in **HashiCorp Vault** (`secret/connections/crypto_db`) and read by Airflow when tasks run
+(Vault secrets backend, `BaseHook.get_connection("crypto_db")`).
+- **Vault in server mode**: persistent storage (Docker volume `vault_data`), starts sealed, unsealed by `vault/start.sh`.
+- **Least privilege**: Airflow authenticates through **AppRole** with a read-only policy. The root token is only used by the start script and for administration.
+- **What stays in `.env`**: the secrets Airflow needs before Vault is readable (Fernet key, JWT secret, database password).
 
-- **Aucun mot de passe applicatif dans le code ni dans `docker-compose.yml`.**  
-La connexion à la base `crypto` est stockée dans **HashiCorp Vault** (`secret/connections/crypto_db`) et lue par Airflow à l'exécution des tâches  
-(secrets backend Vault, `BaseHook.get_connection("crypto_db")`).
-- **Vault en mode serveur** : stockage persistant (volume Docker `vault_data`), démarrage scellé, déverrouillage par `vault/start.sh`.
-- **Moindre privilège** : Airflow s'authentifie par **AppRole** avec une policy en lecture seule. Le token root n'est utilisé que par le script de démarrage et pour l'administration.
-- **Ce qui reste dans le `.env`** : les secrets nécessaires à Airflow avant que Vault soit lisible (clé Fernet, JWT, mot de passe de la base).
 ## 🛠️ Stack
 
-| Couche | Technologie |
-|--------|-------------|
+| Layer | Technology |
+|-------|------------|
 | Orchestration | Apache Airflow 3.4.0 |
-| Stockage | PostgreSQL 16, Parquet |
-| Traitement | pandas, pyarrow |
+| Storage | PostgreSQL 16, Parquet |
+| Processing | pandas, pyarrow |
 | API | FastAPI |
-| Conteneurisation | Docker Compose |
-| Secrets | HashiCorp Vault (mode serveur, stockage persistant, accès Airflow via AppRole) |
+| Containers | Docker Compose |
+| Secrets | HashiCorp Vault (server mode, persistent storage, Airflow access through AppRole) |
 | BI | Streamlit, Plotly |
-| Qualité | pytest |
+| Quality | pytest |
 
-## 📦 Structure du projet
+## 📦 Project structure
 
 ```
 project_crypto/
@@ -80,15 +79,15 @@ project_crypto/
 │
 ├── requirements.txt
 │
-├── bi/                             # app Streamlit (BI)
+├── bi/                             # Streamlit app (BI)
 │   ├── Dockerfile
 │   ├── requirements.txt
-│   ├── db.py                       # accès Vault + requêtes PostgreSQL
+│   ├── db.py                       # Vault access + PostgreSQL queries
 │   └── app.py                      # dashboard
 │
 ├── dags/
-│   ├── coingecko_dag.py            # crypto_collect_minute (chaque minute)
-│   └── binance_pipeline.py         # ingestion quotidienne des klines (chaque jour)
+│   ├── coingecko_dag.py            # crypto_collect_minute (every minute)
+│   └── binance_pipeline.py         # daily klines ingestion (every day)
 │
 ├── src/                            # PYTHONPATH=/opt/airflow/src
 │   ├── extract/
@@ -96,82 +95,82 @@ project_crypto/
 │   │   └── coingecko.py            # fetch_coingecko_data
 │   │
 │   ├── transform/
-│   │   ├── models.py               # nettoyage / typage (safe_*), transform, process_coingecko_data
-│   │   └── mappers.py              # get_mapper : réconciliation CoinGecko ↔ Binance
+│   │   ├── models.py               # cleaning / typing (safe_*), transform, process_coingecko_data
+│   │   └── mappers.py              # get_mapper: CoinGecko <-> Binance reconciliation
 │   │
 │   ├── load/
-│   │   ├── parquet_io.py           # lecture/écriture Parquet
-│   │   └── postgres_db.py          # insertions, purge des vieilles klines, mapping
+│   │   ├── parquet_io.py           # Parquet read/write
+│   │   └── postgres_db.py          # inserts, purge of old klines, mapping
 │   │
 │   └── pipelines/
 │       └── ingestion.py            # ingest_pair, load_recent_klines_pipe
-│  
+│
 ├── api/                            # FastAPI + bench.py
 │      ├── vault_config.py
 │      └── main, schema, queries,...
-│                         
-├── storage/
-│   ├──  schema.sql                 # market_snapshots, klines
-│   └── bi.sql                      # schéma bi, vues, rôle bi_ro (lecture seule)
 │
-├── tests/                          # tests pytest
+├── storage/
+│   ├── schema.sql                  # market_snapshots, klines
+│   └── bi.sql                      # bi schema, views, read-only role bi_ro
+│
+├── tests/                          # pytest tests
 │
 ├── vault/
-│   ├── config.hcl                  # config Vault (stockage fichier, listener HTTP)
-│   ├── airflow-read.hcl            # policy : lecture seule de connections/* et variables/*
+│   ├── config.hcl                  # Vault config (file storage, HTTP listener)
+│   ├── airflow-read.hcl            # policy: read-only on connections/* and variables/*
 │   ├── bi-read.hcl
-│   ├── start.sh                    # point d'entrée : déverrouille Vault, génère les accès Airflow, lance Docker
-│   └── keys.json                   # clé de déverrouillage + token root (NON versionné)
+│   ├── start.sh                    # entry point: unseals Vault, generates Airflow credentials, starts Docker
+│   └── keys.json                   # unseal key + root token (NOT versioned)
 │
-├── data/                           # non versionné (Parquet)
+├── data/                           # not versioned (Parquet)
 │
-└── logs/                           # non versionné
+└── logs/                           # not versioned
 ```
 
-## 🚀 Démarrage rapide
+## 🚀 Quick start
 
-### Prérequis
+### Requirements
 
-- Docker et Docker Compose
-- ~4 Go de RAM et 2 CPU alloués à Docker (recommandation Airflow)
+- Docker and Docker Compose
+- ~4 GB of RAM and 2 CPUs allocated to Docker (Airflow recommendation)
 
 ### Installation
 
 ```bash
-git clone <url-du-repo>
-cd <url-du-repo>
+git clone <repo-url>
+cd <repo-url>
 
-cp .env.example .env        # à compléter (voir ci-dessous)
+cp .env.example .env        # fill it in (see below)
 ```
 
-Variables attendues dans `.env` (non versionné) :
+Variables expected in `.env` (not versioned):
 
-| Variable | Rôle |
-|----------|------|
-| `POSTGRES_PASSWORD` | Mot de passe PostgreSQL |
-| `FERNET_KEY` | Clé de chiffrement Airflow |
-| `AIRFLOW__API_AUTH__JWT_SECRET` | Secret JWT Airflow |
-| `AIRFLOW_UID` | UID Linux de l'utilisateur (`id -u`) |
+| Variable | Purpose |
+|----------|---------|
+| `POSTGRES_PASSWORD` | PostgreSQL password |
+| `FERNET_KEY` | Airflow encryption key |
+| `AIRFLOW__API_AUTH__JWT_SECRET` | Airflow JWT secret |
+| `AIRFLOW_UID` | Linux UID of the user (`id -u`) |
 | `AIRFLOW_PROJ_DIR` | `.` |
-| `_AIRFLOW_WWW_USER_PASSWORD` | Mot de passe de l'admin Airflow |
-| `_PIP_ADDITIONAL_REQUIREMENTS` | "pytest apache-airflow-providers-hashicorp"|
+| `_AIRFLOW_WWW_USER_PASSWORD` | Airflow admin password |
+| `_PIP_ADDITIONAL_REQUIREMENTS` | "pytest apache-airflow-providers-hashicorp" |
 
-> Les valeurs contenant des espaces ou des caractères spéciaux (`$ & ; ( ) ! #`) doivent être entre guillemets, car `start.sh` lit ce fichier avec `source`.
+> Values containing spaces or special characters (`$ & ; ( ) ! #`) must be quoted, because `start.sh` reads this file with `source`.
 
-### Première installation de Vault
+### First-time Vault setup
 
-Les secrets applicatifs (connexion à la base `crypto`) sont dans Vault, pas dans le `.env`.
-Prérequis : `jq`.
+Application secrets (the `crypto` database connection) live in Vault, not in `.env`.
+Requires `jq`.
 
 ```bash
-# 1. Démarrer Vault seul (il démarre vide et scellé)
+# 1. Start Vault alone (it starts empty and sealed)
 docker compose up -d vault
 
-# 2. Initialiser : 1 clé de déverrouillage, 1 nécessaire. Affichée une seule fois, enregistrée dans keys.json
+# 2. Initialise: 1 unseal key, 1 required. Shown only once, saved to keys.json
 docker compose exec -T vault vault operator init -key-shares=1 -key-threshold=1 -format=json > vault/keys.json
-chmod 600 vault/keys.json          # fichier déjà dans .gitignore ; en faire aussi une copie à l'abri
+chmod 600 vault/keys.json          # file is already in .gitignore; also keep a copy somewhere safe
 
-# 3. Déverrouiller, créer le moteur de secrets, le secret, la policy et l'AppRole
+# 3. Unseal, create the secrets engine, the secret, the policy and the AppRole
 set -a; source .env; set +a
 export UNSEAL_KEY=$(jq -r '.unseal_keys_b64[0]' vault/keys.json)
 export VAULT_TOKEN=$(jq -r '.root_token' vault/keys.json)
@@ -186,50 +185,50 @@ docker compose exec -T -e VAULT_TOKEN vault vault write auth/approle/role/airflo
 unset UNSEAL_KEY VAULT_TOKEN
 ```
 
-### Démarrage
+### Start
 
 ```bash
 ./vault/start.sh
 ```
 
-Le script :
-1. lit le `.env` ;
-2. démarre Vault et le **déverrouille** si besoin (Vault redémarre scellé, par exemple après un redémarrage du PC) ;
-3. génère de nouveaux identifiants AppRole pour Airflow (accès en **lecture seule**, le token root ne sert qu'ici) ;
-4. lance tous les autres services avec `docker compose up -d`.
+The script:
+1. reads `.env`;
+2. starts Vault and **unseals** it if needed (Vault restarts sealed, for example after a PC reboot);
+3. generates new AppRole credentials for Airflow (**read-only** access, the root token is only used here);
+4. starts all the other services with `docker compose up -d`.
 
-> Utiliser `./vault/start.sh` à la place de `docker compose up`. Sans lui, Vault reste scellé et les tâches échouent.
+> Use `./vault/start.sh` instead of `docker compose up`. Without it Vault stays sealed and tasks fail.
 
 ```bash
-# Vérifier que les services sont healthy
+# Check that services are healthy
 docker compose ps
 ```
 
-> 🔐 Ni `.env`, ni `vault/keys.json`, ni `data/` ne sont versionnés (`.gitignore`).
+> 🔐 Neither `.env`, `vault/keys.json` nor `data/` are versioned (`.gitignore`).
 
-### Accès
+### Access
 
 | Service | URL |
 |---------|-----|
 | Airflow UI | http://localhost:8080 |
-| API FastAPI | http://localhost:8000 |
-| API Swagger UI (Doc API) | http://localhost:8000/docs |
+| FastAPI API | http://localhost:8000 |
+| API Swagger UI (API docs) | http://localhost:8000/docs |
 | Streamlit | http://localhost:8501 |
-| Vault UI (administration) | http://127.0.0.1:8200 (token root dans `vault/keys.json`) |
+| Vault UI (administration) | http://127.0.0.1:8200 (root token in `vault/keys.json`) |
 
 
 ## 🔌 API
 
-Documentation interactive (Swagger UI) : http://localhost:8000/docs
+Interactive documentation (Swagger UI): http://localhost:8000/docs
 
 | Route | Description |
 |-------|-------------|
-| `GET /`| Page d'accueil|
-| `GET /health`| Status de l'API|
-| `GET /price/{coin_id}` | Dernier prix CoinGecko collecté pour une crypto |
-| `GET /klines/{coin_id}` | Bougies 1 minute Binance d'une crypto sur une période |
+| `GET /` | Home page |
+| `GET /health` | API status |
+| `GET /price/{coin_id}` | Latest CoinGecko price collected for a crypto |
+| `GET /klines/{coin_id}` | Binance 1-minute candles of a crypto over a period |
 
-`coin_id` est l'identifiant CoinGecko (ex. `bitcoin`) : 1 à 64 caractères parmi `a-z`, `0-9` et `-`.
+`coin_id` is the CoinGecko identifier (e.g. `bitcoin`): 1 to 64 characters among `a-z`, `0-9` and `-`.
 
 ### `GET /price/{coin_id}`
 
@@ -245,24 +244,24 @@ curl "http://localhost:8000/price/bitcoin"
 }
 ```
 
-| Champ | Type | Description |
+| Field | Type | Description |
 |-------|------|-------------|
-| `coin_id` | string | Identifiant CoinGecko |
-| `current_price` | string | Dernier prix en USD (chaîne, pour conserver la précision décimale) |
-| `collected_at` | datetime (UTC) | Horodatage de la collecte |
+| `coin_id` | string | CoinGecko identifier |
+| `current_price` | string | Latest price in USD (a string, to keep decimal precision) |
+| `collected_at` | datetime (UTC) | Collection timestamp |
 
 ### `GET /klines/{coin_id}`
 
-Retourne les bougies 1 minute d'une crypto sur une période.
+Returns the 1-minute candles of a crypto over a period.
 
 ```bash
 curl "http://localhost:8000/klines/bitcoin?start=2026-11-20T09:00:00Z&end=2026-11-20T09:03:00Z"
 ```
 
-| Paramètre | Description |
+| Parameter | Description |
 |-----------|-------------|
-| `coin_id` | Identifiant CoinGecko (dans l'URL) |
-| `start`, `end` | Bornes ISO 8601 avec fuseau, en UTC (`end` exclue). `start` doit être antérieur à `end`, et la période ne peut pas dépasser **7 jours** |
+| `coin_id` | CoinGecko identifier (in the URL) |
+| `start`, `end` | ISO 8601 bounds with timezone, in UTC (`end` excluded). `start` must be before `end`, and the period cannot exceed **7 days** |
 
 ```json
 {
@@ -282,133 +281,133 @@ curl "http://localhost:8000/klines/bitcoin?start=2026-11-20T09:00:00Z&end=2026-1
 }
 ```
 
-| Champ | Type | Description |
+| Field | Type | Description |
 |-------|------|-------------|
-| `coin_id` | string | Identifiant CoinGecko |
-| `symbol` | string | Paire Binance correspondante (ex. `BTCUSDT`) |
-| `count` | integer | Nombre de bougies renvoyées |
-| `candles[].open_time` | datetime (UTC) | Ouverture de la bougie |
-| `candles[].open`, `high`, `low`, `close` | number | Prix OHLC |
-| `candles[].volume` | number | Volume échangé (en unité de la crypto) |
+| `coin_id` | string | CoinGecko identifier |
+| `symbol` | string | Matching Binance pair (e.g. `BTCUSDT`) |
+| `count` | integer | Number of candles returned |
+| `candles[].open_time` | datetime (UTC) | Candle open time |
+| `candles[].open`, `high`, `low`, `close` | number | OHLC prices |
+| `candles[].volume` | number | Traded volume (in units of the crypto) |
 
-### Codes d'erreur
+### Error codes
 
 | Code | Route | Cause |
 |------|-------|-------|
-| 404 | `/price` | Crypto inconnue |
-| 404 | `/klines` | Aucune bougie sur la période : crypto inconnue, crypto sans paire Binance ou période hors historique |
-| 422 | `/klines` | `start` ≥ `end`, période > 7 jours, date invalide ou `coin_id` au mauvais format |
+| 404 | `/price` | Unknown crypto |
+| 404 | `/klines` | No candle in the period: unknown crypto, crypto without a Binance pair, or period outside the history |
+| 422 | `/klines` | `start` >= `end`, period > 7 days, invalid date, or malformed `coin_id` |
 
 
-## 📈 Dashboard BI (Streamlit)
+## 📈 BI dashboard (Streamlit)
 
-Application disponible sur http://localhost:8501
+App available at http://localhost:8501
 
-**Contenu :**
-1. Choix de la période du dashboard
-2. Les plus forte évolutions de prix (hausse et baisse)
-3. Top 5 des cryptos les plus chères
-4. Graphique en chandeliers d'une crypto (choix par nom)
+**Content:**
+1. Choice of the dashboard period
+2. Biggest price moves (up and down)
+3. Top 5 most expensive cryptos
+4. Candlestick chart of a crypto (chosen by name)
 
-**Données**
-- Schéma `bi` : seule interface entre le dashboard et la base.
-- Vue `bi.v_klines_1m` : bougies d'une minute de toutes les paires Binance (symbole, heure d'ouverture, open, high, low, close, volume), lues dans `public.klines`. Les bougies plus grandes (5 min, 1 h, 1 jour) sont agrégées à la volée par la requête (`date_bin`).
-- Vue `bi.v_latest_prices` : dernier prix connu de chaque crypto CoinGecko (nom, symbole, prix, date de collecte), lu dans `public.market_snapshots`. Elle alimente le top 5 et fait le lien avec Binance (symbole CoinGecko + `USDT`).
-- Seules les colonnes utiles au dashboard sont exposées (pas de capitalisation ni de volume CoinGecko).
+**Data**
+- `bi` schema: the only interface between the dashboard and the database.
+- View `bi.v_klines_1m`: 1-minute candles of all Binance pairs (symbol, open time, open, high, low, close, volume), read from `public.klines`. Larger candles (5 min, 1 h, 1 day) are aggregated on the fly by the query (`date_bin`).
+- View `bi.v_latest_prices`: latest known price of each CoinGecko crypto (name, symbol, price, collection date), read from `public.market_snapshots`. It feeds the top 5 and links to Binance (CoinGecko symbol + `USDT`).
+- Only the columns the dashboard needs are exposed (no CoinGecko market cap or volume).
 
-**Architecture et sécurité :**
-- Streamlit : rôle `bi_ro`, lecture seule des schéma PostgreSQL `bi`, aucun droit sur les tables `public`.
-- Les identifiants de `bi_ro` sont stockés dans Vault (`secret/bi/crypto_bi_ro`).  
+**Architecture and security:**
+- Streamlit uses the `bi_ro` role, read-only on the PostgreSQL `bi` schema, with no rights on `public` tables.
+- The `bi_ro` credentials are stored in Vault (`secret/bi/crypto_bi_ro`).
 
-**Limites connues :**
-- Les bougies en base ne couvrent que 7 jours glissants : une période plus longue est affichée mais limitée à cet historique.
-- Seules les cryptos ayant une paire USDT sur Binance apparaissent.
+**Known limits:**
+- Candles in the database only cover a rolling 7 days: a longer period is displayed but limited to that history.
+- Only cryptos with a USDT pair on Binance appear.
 
-**Screenshots**  
-  
+**Screenshots**
+
 ![](img/screen1.png)
 ![](img/screen2.png)
 
 
-## ⚡ Performances
-Mesures sur `bitcoin`, en local (Docker, PC personnel).  
-Le script `api/bench.py` mesure les trois étapes d'une requête `/klines` :  
-requête SQL, validation Pydantic, sérialisation JSON.
+## ⚡ Performance
+Measured on `bitcoin`, locally (Docker, personal PC).
+The `api/bench.py` script measures the three steps of a `/klines` request:
+SQL query, Pydantic validation, JSON serialisation.
 
-**Méthode** : fenêtres de 1 et 7 jours se terminant à l'instant présent,  
-21 exécutions par fenêtre dont la première (chauffe) est ignorée.  
-Le script affiche la médiane et le p95 de chaque étape, et du total.
+**Method**: 1-day and 7-day windows ending now,
+21 runs per window, the first one (warm-up) is ignored.
+The script prints the median and p95 of each step and of the total.
 
 ```bash
-docker compose exec api python bench.py bitcoin    # autre crypto : remplacer "bitcoin"
+docker compose exec api python bench.py bitcoin    # another crypto: replace "bitcoin"
 ```
 
-**Décomposition interne** (`docker compose exec api python bench.py bitcoin`) :
+**Internal breakdown** (`docker compose exec api python bench.py bitcoin`):
 
-| Période | Bougies | SQL | Validation | JSON | **Total** | p95 |
-|---------|--------:|----:|-----------:|-----:|----------:|----:|
-| 1 jour | 1 294 | 10,4 ms | 0,5 ms | 0,8 ms | **11,7 ms** | 12,2 ms |
-| 7 jours | 9 934 | 36,4 ms | 3,7 ms | 7,3 ms | **47,6 ms** | 49,4 ms |
+| Period | Candles | SQL | Validation | JSON | **Total** | p95 |
+|--------|--------:|----:|-----------:|-----:|----------:|----:|
+| 1 day | 1,294 | 10.4 ms | 0.5 ms | 0.8 ms | **11.7 ms** | 12.2 ms |
+| 7 days | 9,934 | 36.4 ms | 3.7 ms | 7.3 ms | **47.6 ms** | 49.4 ms |
 
-**Mesure de bout en bout** (HTTP via `curl`, 10 requêtes après un appel de chauffe, médiane) :
+**End-to-end measure** (HTTP with `curl`, 10 requests after a warm-up call, median):
 
-| Période | Médiane |
-|---------|--------:|
-| 1 jour | 14 ms |
-| 7 jours | 50 ms |
+| Period | Median |
+|--------|-------:|
+| 1 day | 14 ms |
+| 7 days | 50 ms |
 
-➡️ L'objectif de **< 200 ms** est tenu avec une large marge, y compris sur la fenêtre maximale de 7 jours en PostgreSQL.   
-Le coût est dominé par la requête SQL (~75 %) ; la sérialisation JSON suit.
+➡️ The **< 200 ms** goal is met with a wide margin, including on the maximum 7-day window in PostgreSQL.
+The cost is dominated by the SQL query (~75%), followed by JSON serialisation.
 
 ## ✅ Tests
 
 ```bash
 docker compose exec api pytest <test_file>
 ```
-test_file :  
+test_file:
 - test_binance_transform.py
 - test_mappers.py
 - test_process_coingecko.py
 
 
 
-## 📊 Monitoring et fiabilité
+## 📊 Monitoring and reliability
 
-- **Retries** automatiques sur les DAGs et sur les appels API (backoff, rate limit).
-- **Alertes** sur échec de tâche.
-- **Healthchecks** Docker sur chaque service.
-- **Logs** Airflow ; les cryptos sans équivalent Binance sont tracées en *warning*.
+- Automatic **retries** on DAGs and API calls (backoff, rate limit).
+- **Alerts** on task failure.
+- Docker **healthchecks** on every service.
+- Airflow **logs**; cryptos with no Binance equivalent are logged as *warnings*.
 
-## ⚠️ Limites connues
+## ⚠️ Known limits
 
-- **Vault configuré pour un usage local** : la clé de déverrouillage et le token root (`vault/keys.json`) sont stockés sur le même poste que les données du coffre (volume `vault_data`), et le trafic est en HTTP.  
-En production : clés de déverrouillage conservées à part (ou auto-unseal via un KMS cloud), clés réparties entre plusieurs personnes, TLS, sauvegarde du volume, stockage Raft en haute disponibilité.
-- Après un redémarrage du poste, Vault est scellé : relancer `./vault/start.sh`.
-- Toutes les équivalences entre Coingecko et Binance ne sont pas trouvées.
-- Le backfill est prévu pour l'intervalle **1m** uniquement.
-- Disponibilité mesurée sur un poste local, pas sur une infrastructure de production.
+- **Vault configured for local use**: the unseal key and the root token (`vault/keys.json`) are stored on the same machine as the vault data (`vault_data` volume), and traffic is plain HTTP.
+In production: unseal keys kept separately (or cloud KMS auto-unseal), keys split between several people, TLS, volume backups, highly available Raft storage.
+- After a machine restart Vault is sealed: run `./vault/start.sh` again.
+- Not every CoinGecko-to-Binance match is found.
+- Backfill only covers the **1m** interval.
+- Availability was measured on a local machine, not on production infrastructure.
 
-## 🗺️ Pistes d'évolution
+## 🗺️ Roadmap
 
-- Stockage cloud du Parquet (S3 / Azure Blob).
-- Support d'autres intervalles de bougies.
-- Dashboard de visualisation (Grafana / Metabase).
+- Cloud storage for Parquet (S3 / Azure Blob).
+- Support for other candle intervals.
+- Visualisation dashboard (Grafana / Metabase).
 
-## 📚 Ressources
+## 📚 Resources
 
 - [CoinGecko API](https://www.coingecko.com/en/api/documentation)
 - [Binance API](https://binance-docs.github.io/apidocs/)
 - [Apache Airflow](https://airflow.apache.org/docs/)
 
 
-## 🙏 Remerciements
+## 🙏 Acknowledgements
 
-Merci à Gaël Penessot pour la problématique initiale et le cadrage du projet.  
-[Site](https://gpenessot.github.io/#formations)
+Thanks to Gaël Penessot for the initial problem statement and project framing.
+[Website](https://gpenessot.github.io/#formations)
 
-## 👤 Auteur
+## 👤 Author
 
 **François Dumont**
-[Github](https://github.com/FrancoisDumont30)
+[GitHub](https://github.com/FrancoisDumont30)
 [Portfolio](https://francoisdumont30.github.io/portfolio/)
-[Linked-in](www.linkedin.com/in/françoisdumont)
+[LinkedIn](https://www.linkedin.com/in/fran%C3%A7oisdumont)

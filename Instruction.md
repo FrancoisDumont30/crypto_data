@@ -1,75 +1,63 @@
-# ⚙️ Pipeline Crypto Trading
+# ⚙️ Crypto Trading Pipeline (initial brief)
 
-> Pipeline robuste pour collecter et servir les données de 50+ cryptomonnaies en temps réel.
+> Robust pipeline to collect and serve real-time data for 50+ cryptocurrencies.
 
-## 📊 Problématique Business
+## 📊 Business problem
 
-**Contexte** : Analyser les cryptos nécessite des données temps réel multi-sources fiables.
+**Context**: analysing cryptos requires reliable, real-time, multi-source data.
 
-**Défi** : Agréger des flux hétérogènes (prix, volume) depuis plusieurs APIs avec une haute disponibilité.
+**Challenge**: aggregate heterogeneous feeds (price, volume) from several APIs with high availability.
 
-**Objectif** : Pipeline stable collectant **50+ cryptos à la minute** avec historique et serving API.
+**Goal**: a stable pipeline collecting **50+ cryptos every minute**, with history and an API.
 
 ---
 
 ## 🗂️ Dataset
 
-- **Source principale** : [CoinGecko API](https://www.coingecko.com/en/api) (gratuit)
-- **Historique** : [Binance API](https://binance-docs.github.io/apidocs/) (gratuit)
-- **Volume** : 50 cryptos, données à la minute
-- **Features** : Prix, volume, market cap
+- **Main source**: [CoinGecko API](https://www.coingecko.com/en/api) (free)
+- **History**: [Binance API](https://binance-docs.github.io/apidocs/) (free)
+- **Volume**: 50 cryptos, minute-level data
+- **Features**: price, volume, market cap
+
 ---
 
-## 🎯 Critères de Réussite
+## 🎯 Success criteria
 
-| Métrique | Objectif |
-|----------|----------|
-| **Disponibilité pipeline** | > 99% uptime |
-| **Fréquence collecte** | Toutes les minutes |
-| **Retry logic** | Gestion automatique des erreurs API |
-| **Latence API serving** | < 200ms |
+| Metric | Goal |
+|--------|------|
+| **Pipeline availability** | > 99% uptime |
+| **Collection frequency** | Every minute |
+| **Retry logic** | Automatic handling of API errors |
+| **API serving latency** | < 200 ms |
 
 ---
 
 ## 🛠️ Stack
 
-- **Orchestration** : Apache Airflow
-- **Storage** : PostgreSQL + Parquet
-- **Processing** : pandas
-- **API** : FastAPI, Docker
+- **Orchestration**: Apache Airflow
+- **Storage**: PostgreSQL + Parquet
+- **Processing**: pandas
+- **API**: FastAPI, Docker
 
 ---
 
-## 📦 Structure
+## 💡 Key techniques
 
-```
-pipeline-crypto-trading/
-├── dags/               # DAGs Airflow
-├── src/                # Collecteurs, transformations
-├── api/                # FastAPI serving
-├── storage/            # Schémas PostgreSQL
-└── data/               # Cache local (non versionné)
-```
+**Orchestration**:
+- Airflow DAGs with retry logic and alerts
+- Granular scheduling per collection frequency
 
----
+**Storage**:
+- PostgreSQL for recent structured data
+- Parquet for long-term history
 
-## 💡 Techniques Clés
-
-**Orchestration** :
-- DAGs Airflow avec retry logic et alertes
-- Scheduling granulaire par fréquence de collecte
-
-**Storage** :
-- PostgreSQL pour données structurées récentes
-- Parquet pour historique longue durée
-
-**Monitoring** :
-- Logs Airflow centralisés
-- Alertes sur échecs de collecte
+**Monitoring**:
+- Centralised Airflow logs
+- Alerts on collection failures
 
 ---
 
-## 📚 Ressources
+## 📚 Resources
 
 - [CoinGecko API Docs](https://www.coingecko.com/en/api/documentation)
 - [Binance API Docs](https://binance-docs.github.io/apidocs/)
